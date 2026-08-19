@@ -20,7 +20,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Button
 import androidx.tv.material3.Text
-import al.speedline.iptv.AppConfig
 import al.speedline.iptv.data.XtreamRepository
 
 @Composable
@@ -102,10 +101,8 @@ fun AdminSettingsScreen(repository: XtreamRepository, onSaved: () -> Unit, onBac
             Row {
                 Text("SPEED", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Color.White)
                 Text("LINE", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Color(0xFF29B6F6))
-                Text(" IPTV — STALKER", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                Text(" IPTV", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Color.White)
             }
-            M3Text("Portal", color = Color.White, fontSize = 16.sp)
-            M3Text(AppConfig.STALKER_PORTAL_URL, color = Color.White.copy(alpha=.85f), fontSize = 17.sp)
             OutlinedTextField(
                 value = mac,
                 onValueChange = { mac = it.uppercase() },
@@ -119,7 +116,7 @@ fun AdminSettingsScreen(repository: XtreamRepository, onSaved: () -> Unit, onBac
                 Button(onClick = onBack) { Text("ANULO") }
                 Button(enabled = !busy && mac.isNotBlank(), onClick = {
                     busy = true
-                    message = "Duke verifikuar portalin…"
+                    message = "Duke verifikuar…"
                     Thread {
                         val result = repository.updateMacBlocking(mac)
                         android.os.Handler(android.os.Looper.getMainLooper()).post {
