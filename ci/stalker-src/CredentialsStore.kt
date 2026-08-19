@@ -7,21 +7,30 @@ import java.net.NetworkInterface
 class CredentialsStore(private val context: Context) {
     private val prefs = context.getSharedPreferences("speedline_stalker_auth", Context.MODE_PRIVATE)
 
-    fun get(): Credentials {
-        val saved = prefs.getString("mac", null)?.uppercase()?.takeIf { isValidMac(it) }
-        val mac = saved ?: generateDeviceMac().also { saveMac(it) }
-        return Credentials(mac, "stalker")
+    fun get(): Credentials? {
+        if (!prefs.getBoolean("activated", false)) return null
+        return Credentials(currentMac(), "stalker")
     }
 
-    fun save(credentials: Credentials) = saveMac(credentials.username)
+    fun currentMac(): String {
+        val saved = prefs.getString("mac", null)?.uppercase()?.takeIf { isValidMac(it) }
+        if (saved != null) return saved
+        val generated = generateDeviceMac()
+        prefs.edit().putString("mac", generated).apply()
+        return generated
+    }
 
-    fun saveMac(mac: String) {
+    fun save(credentials: Credentials) = saveMac(credentials.username, true)
+
+    fun saveMac(mac: String, activate: Boolean = true) {
         val normalized = normalizeMac(mac)
         require(isValidMac(normalized)) { "MAC i pavlefshëm. Formati: 00:1A:79:XX:XX:XX" }
-        prefs.edit().putString("mac", normalized).apply()
+        prefs.edit().putString("mac", normalized).putBoolean("activated", activate).apply()
     }
 
-    fun clear() = prefs.edit().remove("mac").apply()
+    fun markActivated() = prefs.edit().putBoolean("activated", true).apply()
+
+    fun clear() = prefs.edit().putBoolean("activated", false).apply()
 
     private fun generateDeviceMac(): String {
         val suffix = hardwareSuffix() ?: androidIdSuffix()
