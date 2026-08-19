@@ -1,4 +1,4 @@
-name: Build Speedline IPTV Stalker Universal
+name: Build Speedline IPTV Portal APK
 
 on:
   workflow_dispatch:
@@ -40,7 +40,7 @@ jobs:
           PY
           bash /tmp/rebuild-v021.sh
 
-      - name: Apply Stalker portal source
+      - name: Apply portal source and fixes
         run: |
           ROOT=build-src/SpeedlineIPTV/app/src/main/java/al/speedline/iptv
           cp ci/stalker-src/AppConfig.kt "$ROOT/AppConfig.kt"
@@ -48,39 +48,97 @@ jobs:
           cp ci/stalker-src/XtreamApi.kt "$ROOT/data/XtreamApi.kt"
           cp ci/stalker-src/XtreamRepository.kt "$ROOT/data/XtreamRepository.kt"
           cp ci/stalker-src/AdminScreens.kt "$ROOT/ui/AdminScreens.kt"
+          cp ci/stalker-src/LoginScreen.kt "$ROOT/ui/LoginScreen.kt"
 
           python3 - <<'PY'
           from pathlib import Path
           import re
+
+          # Resolve Stalker create_link off the Compose/UI thread so a network
+          # error can never terminate the Activity when OK is pressed on a channel.
+          p = Path('build-src/SpeedlineIPTV/app/src/main/java/al/speedline/iptv/ui/PlayerScreen.kt')
+          s = p.read_text()
+          old = '''        val url = remember(current.id, current.type) { repository.playbackUrl(current) }
+        val vodUrls = remember(current.id, current.type, current.containerExtension, current.directSource) { repository.playbackUrls(current) }
+        if (current.type == ContentType.MOVIE || current.type == ContentType.SERIES) {'''
+          new = '''        var resolvedUrls by remember(current.id, current.type, current.directSource) { mutableStateOf<List<String>?>(null) }
+        var resolveError by remember(current.id, current.type, current.directSource) { mutableStateOf<String?>(null) }
+
+        LaunchedEffect(current.id, current.type, current.directSource) {
+            resolvedUrls = null
+            resolveError = null
+            val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                runCatching { repository.playbackUrls(current) }
+            }
+            result.onSuccess { urls ->
+                resolvedUrls = urls.filter { it.isNotBlank() }.distinct()
+                if (resolvedUrls.isNullOrEmpty()) resolveError = "Stream URL mungon"
+            }.onFailure { e ->
+                resolveError = e.message ?: "Kanali nuk mund të hapet"
+            }
+        }
+
+        val vodUrls = resolvedUrls.orEmpty()
+        val url = resolvedUrls?.firstOrNull()
+        if (url == null) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text(resolveError ?: "Duke hapur kanalin…", color = Color.White, fontSize = 20.sp)
+            }
+        } else if (current.type == ContentType.MOVIE || current.type == ContentType.SERIES) {'''
+          if old not in s:
+              raise RuntimeError('Expected PlayerScreen playback block not found')
+          s = s.replace(old, new, 1)
+          p.write_text(s)
+
+          # Version + separate ABI APKs. This keeps each install close to the
+          # v0.2.1 size instead of bundling ARM32+ARM64 into one ~96 MB APK.
           p = Path('build-src/SpeedlineIPTV/app/build.gradle.kts')
           s = p.read_text()
-          s = s.replace('versionCode = 11', 'versionCode = 12')
-          s = s.replace('versionName = "0.2.1"', 'versionName = "0.3.0-stalker"')
-          s = re.sub(r'\n\s*split[s]?\s*\{.*?\n\s*buildFeatures\s*\{', '\n\n    buildFeatures {', s, flags=re.S)
-          if 'abiFilters' not in s:
-              s = s.replace('defaultConfig {', 'defaultConfig {\n        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }', 1)
+          s = s.replace('versionCode = 11', 'versionCode = 13')
+          s = s.replace('versionName = "0.2.1"', 'versionName = "0.3.1"')
+          # Remove any previous split/universal configuration inserted upstream.
+          s = re.sub(r'\n\s*splits\s*\{.*?\n\s*buildFeatures\s*\{', '\n\n    buildFeatures {', s, flags=re.S)
+          if 'splits {' not in s:
+              s = s.replace('\n    buildFeatures {', '''
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a", "armeabi-v7a")
+            isUniversalApk = false
+        }
+    }
+
+    buildFeatures {''', 1)
           p.write_text(s)
           PY
 
-          echo 'Stalker universal source prepared.'
-          grep -n 'versionName\|abiFilters\|splits' build-src/SpeedlineIPTV/app/build.gradle.kts || true
+          echo 'Portal v0.3.1 source prepared.'
+          grep -n 'versionName\|splits\|abi' build-src/SpeedlineIPTV/app/build.gradle.kts || true
 
-      - name: Build universal ARM APK
+      - name: Build ARM32 and ARM64 APKs
         working-directory: build-src/SpeedlineIPTV
         run: gradle :app:assembleDebug --stacktrace
 
-      - name: Verify APK
+      - name: Verify and rename APKs
         run: |
+          set -e
           ls -lh build-src/SpeedlineIPTV/app/build/outputs/apk/debug/*.apk
-          APK=$(find build-src/SpeedlineIPTV/app/build/outputs/apk/debug -name '*.apk' | head -1)
-          cp "$APK" SpeedlineIPTV-Stalker-v0.3.0-universal-arm.apk
-          sha256sum SpeedlineIPTV-Stalker-v0.3.0-universal-arm.apk > SpeedlineIPTV-Stalker-v0.3.0-universal-arm.sha256
+          ARM32=$(find build-src/SpeedlineIPTV/app/build/outputs/apk/debug -name '*armeabi-v7a*.apk' | head -1)
+          ARM64=$(find build-src/SpeedlineIPTV/app/build/outputs/apk/debug -name '*arm64-v8a*.apk' | head -1)
+          test -n "$ARM32" -a -f "$ARM32"
+          test -n "$ARM64" -a -f "$ARM64"
+          cp "$ARM32" SpeedlineIPTV-Portal-v0.3.1-ARM32.apk
+          cp "$ARM64" SpeedlineIPTV-Portal-v0.3.1-ARM64.apk
+          sha256sum SpeedlineIPTV-Portal-v0.3.1-ARM32.apk SpeedlineIPTV-Portal-v0.3.1-ARM64.apk > SpeedlineIPTV-Portal-v0.3.1.sha256
+          ls -lh SpeedlineIPTV-Portal-v0.3.1-*.apk
 
-      - name: Upload universal Stalker APK
+      - name: Upload portal APKs
         uses: actions/upload-artifact@v4
         with:
-          name: SpeedlineIPTV-Stalker-v0.3.0-universal-arm
+          name: SpeedlineIPTV-Portal-v0.3.1
           path: |
-            SpeedlineIPTV-Stalker-v0.3.0-universal-arm.apk
-            SpeedlineIPTV-Stalker-v0.3.0-universal-arm.sha256
+            SpeedlineIPTV-Portal-v0.3.1-ARM32.apk
+            SpeedlineIPTV-Portal-v0.3.1-ARM64.apk
+            SpeedlineIPTV-Portal-v0.3.1.sha256
           if-no-files-found: error
