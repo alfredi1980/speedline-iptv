@@ -35,6 +35,7 @@ jobs:
           sed -i '/org.jetbrains.kotlin.android/d' build-src/SpeedlineIPTV/app/build.gradle.kts
           cd build-src/SpeedlineIPTV
           patch -p2 < ../../ci/speedline-v014.patch
+          sed -i 's/context = this,/context = this@MainActivity,/g' app/src/main/java/al/speedline/iptv/MainActivity.kt
 
       - name: Build debug APK
         working-directory: build-src/SpeedlineIPTV
