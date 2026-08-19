@@ -29,14 +29,15 @@ jobs:
 
       - name: Rebuild source and apply v0.1.6 overrides
         run: |
-          cat ci/source/part_*.b64 | base64 -d > SpeedlineIPTV-v0.1.2-buildready.zip
+          cat ci/source/part_*.b64 | tr -d '\r\n' | base64 -d > SpeedlineIPTV-v0.1.2-buildready.zip
           unzip -q SpeedlineIPTV-v0.1.2-buildready.zip -d build-src
           sed -i '/org.jetbrains.kotlin.android/d' build-src/SpeedlineIPTV/build.gradle.kts
-          cat ci/v015/part_*.b64 | base64 -d > v015-overrides.zip
+          cat ci/v015/part_*.b64 | tr -d '\r\n' | base64 -d > v015-overrides.zip
           unzip -oq v015-overrides.zip -d build-src/SpeedlineIPTV
-          cat ci/v016/part_*.b64 | base64 -d > v016-overrides.zip
+          cat ci/v016/part_*.b64 | tr -d '\r\n' | base64 -d > v016-overrides.zip
           unzip -oq v016-overrides.zip -d build-src/SpeedlineIPTV
           sed -i '/org.jetbrains.kotlin.android/d' build-src/SpeedlineIPTV/app/build.gradle.kts
+          echo "v0.1.6 source rebuilt"
 
       - name: Build debug APK
         working-directory: build-src/SpeedlineIPTV
