@@ -10,7 +10,7 @@ class XtreamRepository(context: Context) {
     @Volatile private var token: String? = null
 
     fun credentials(): Credentials? = auth.get()
-    fun stalkerMac(): String = auth.get().username
+    fun stalkerMac(): String = auth.currentMac()
     fun lastSuccessfulSync(): Long = cache.lastSuccessfulSync()
 
     private fun ensureSession(mac: String = stalkerMac()): String {
@@ -19,22 +19,26 @@ class XtreamRepository(context: Context) {
     }
 
     fun loginBlocking(username: String, password: String = "stalker"): Result<XtreamAccount> = runCatching {
-        auth.saveMac(username)
+        auth.saveMac(username, activate = false)
         token = null
-        ensureSession(stalkerMac())
-        syncAllBlocking().getOrThrow()
+        val mac = stalkerMac()
+        ensureSession(mac)
+        syncAllBlocking(Credentials(mac, "stalker")).getOrThrow()
+        auth.markActivated()
         XtreamAccount(true, "Active", null)
     }
 
     fun updateMacBlocking(mac: String): Result<Unit> = runCatching {
-        auth.saveMac(mac)
+        auth.saveMac(mac, activate = false)
         token = null
-        ensureSession(stalkerMac())
-        syncAllBlocking().getOrThrow()
+        val normalized = stalkerMac()
+        ensureSession(normalized)
+        syncAllBlocking(Credentials(normalized, "stalker")).getOrThrow()
+        auth.markActivated()
     }
 
     fun syncAllBlocking(credentials: Credentials? = auth.get()): Result<Unit> = runCatching {
-        val mac = auth.get().username
+        val mac = credentials?.username ?: stalkerMac()
         token = null
         val t = ensureSession(mac)
         val payloads = linkedMapOf(
@@ -81,6 +85,7 @@ class XtreamRepository(context: Context) {
 
     fun playbackUrls(item: StreamItem): List<String> {
         val cmd = item.directSource.trim()
+        require(cmd.isNotBlank()) { "Komanda e kanalit mungon" }
         if (cmd.startsWith("http://", true) || cmd.startsWith("https://", true)) return listOf(cmd)
         val mac = stalkerMac()
         var t = ensureSession(mac)
@@ -91,5 +96,5 @@ class XtreamRepository(context: Context) {
         }
     }
 
-    fun logout() = Unit
+    fun logout() = auth.clear()
 }
