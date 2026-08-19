@@ -12,6 +12,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.text.font.FontWeight
@@ -21,6 +23,7 @@ import androidx.tv.material3.Button
 import androidx.tv.material3.ButtonDefaults
 import androidx.tv.material3.Text
 import al.speedline.iptv.data.*
+import kotlinx.coroutines.delay
 
 @Composable
 fun BrowseScreen(
@@ -49,10 +52,21 @@ fun BrowseScreen(
 
     var zeroTapCount by remember { mutableIntStateOf(0) }
     var lastZeroTap by remember { mutableLongStateOf(0L) }
+    var focusStreamsAfterCategory by remember { mutableStateOf(false) }
+    val firstStreamRequester = remember { FocusRequester() }
 
     fun selectCategory(id: String) {
         selectedCategory = id
         streams = repository.streams(type, id)
+        focusStreamsAfterCategory = true
+    }
+
+    LaunchedEffect(streams, focusStreamsAfterCategory) {
+        if (focusStreamsAfterCategory && streams.isNotEmpty()) {
+            delay(80)
+            runCatching { firstStreamRequester.requestFocus() }
+            focusStreamsAfterCategory = false
+        }
     }
 
     val title = when {
@@ -165,6 +179,11 @@ fun BrowseScreen(
                     val numberPrefix = if (item.type == ContentType.LIVE) {
                         "${item.channelNumber ?: (index + 1)}   "
                     } else ""
+                    val itemModifier = if (index == 0) {
+                        Modifier.fillMaxWidth().height(46.dp).focusRequester(firstStreamRequester)
+                    } else {
+                        Modifier.fillMaxWidth().height(46.dp)
+                    }
                     Button(
                         onClick = {
                             if (item.type == ContentType.SERIES) onSeries(item) else onPlay(streams, index)
@@ -173,7 +192,7 @@ fun BrowseScreen(
                             favorites.toggle(item)
                             favoriteRevision++
                         },
-                        modifier = Modifier.fillMaxWidth().height(46.dp),
+                        modifier = itemModifier,
                         colors = ButtonDefaults.colors(
                             containerColor = card,
                             focusedContainerColor = Color(0xFF147CE5)
