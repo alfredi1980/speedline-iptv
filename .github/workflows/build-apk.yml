@@ -27,7 +27,7 @@ jobs:
         with:
           gradle-version: '9.5.0'
 
-      - name: Rebuild source and apply v0.1.7 overrides
+      - name: Rebuild source and apply v0.1.9 VOD codec fallback
         run: |
           cat ci/source/part_*.b64 | tr -d '\r\n' | base64 -d > SpeedlineIPTV-v0.1.2-buildready.zip
           unzip -q SpeedlineIPTV-v0.1.2-buildready.zip -d build-src
@@ -40,8 +40,10 @@ jobs:
           unzip -oq v017-overrides.zip -d build-src/SpeedlineIPTV
           cp ci/v017fix/AdminScreens.kt build-src/SpeedlineIPTV/app/src/main/java/al/speedline/iptv/ui/AdminScreens.kt
           cp ci/v017fix/BrowseScreen.kt build-src/SpeedlineIPTV/app/src/main/java/al/speedline/iptv/ui/BrowseScreen.kt
+          cat ci/v019/part_*.b64 | tr -d '\r\n' | base64 -d > v019-overrides.zip
+          unzip -oq v019-overrides.zip -d build-src/SpeedlineIPTV
           sed -i '/org.jetbrains.kotlin.android/d' build-src/SpeedlineIPTV/app/build.gradle.kts
-          echo "v0.1.7 source rebuilt"
+          echo "v0.1.9 source rebuilt"
 
       - name: Build debug APK
         working-directory: build-src/SpeedlineIPTV
@@ -50,6 +52,6 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: SpeedlineIPTV-v0.1.7-debug-apk
+          name: SpeedlineIPTV-v0.1.9-debug-apk
           path: build-src/SpeedlineIPTV/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
