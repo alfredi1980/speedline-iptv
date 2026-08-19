@@ -6,4 +6,5 @@ object AppConfig {
     const val SYNC_INTERVAL_HOURS = 24L
     const val APP_USER_AGENT = "Mozilla/5.0 (QtEmbedded; U; Linux; C) AppleWebKit/533.3 (KHTML, like Gecko) MAG254 stbapp SpeedlineIPTV"
     const val STB_USER_AGENT = "Model: MAG254; Link: Ethernet"
+    // v0.3.1: MAC login + safe background playback resolution.
 }
