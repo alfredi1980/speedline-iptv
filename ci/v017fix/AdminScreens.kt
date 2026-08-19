@@ -2,6 +2,7 @@ package al.speedline.iptv.ui
 
 import android.view.KeyEvent
 import androidx.compose.foundation.background
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.OutlinedTextField
@@ -38,8 +39,10 @@ fun AdminPinScreen(
         Modifier
             .fillMaxSize()
             .focusRequester(requester)
+            .focusable()
             .onPreviewKeyEvent { event ->
                 if (event.nativeKeyEvent.action != KeyEvent.ACTION_DOWN) return@onPreviewKeyEvent false
+
                 val code = event.nativeKeyEvent.keyCode
                 val digit = when (code) {
                     KeyEvent.KEYCODE_0, KeyEvent.KEYCODE_NUMPAD_0 -> "0"
@@ -54,19 +57,38 @@ fun AdminPinScreen(
                     KeyEvent.KEYCODE_9, KeyEvent.KEYCODE_NUMPAD_9 -> "9"
                     else -> null
                 }
+
                 when {
                     digit != null -> {
-                        if (pin.length < expectedPin.length) pin += digit
-                        if (pin.length == expectedPin.length) {
-                            if (pin == expectedPin) onSuccess() else {
-                                pin = ""
-                                error = true
+                        error = false
+                        if (pin.length < expectedPin.length) {
+                            val newPin = pin + digit
+                            if (newPin.length == expectedPin.length) {
+                                if (newPin == expectedPin) {
+                                    pin = newPin
+                                    onSuccess()
+                                } else {
+                                    pin = ""
+                                    error = true
+                                }
+                            } else {
+                                pin = newPin
                             }
                         }
                         true
                     }
-                    code == KeyEvent.KEYCODE_DEL -> { pin = pin.dropLast(1); true }
-                    code == KeyEvent.KEYCODE_BACK -> { onBack(); true }
+
+                    code == KeyEvent.KEYCODE_DEL -> {
+                        pin = pin.dropLast(1)
+                        error = false
+                        true
+                    }
+
+                    code == KeyEvent.KEYCODE_BACK -> {
+                        onBack()
+                        true
+                    }
+
                     else -> false
                 }
             },
@@ -85,10 +107,25 @@ fun AdminPinScreen(
                 Text("LINE", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Color(0xFF29B6F6))
                 Text(" IPTV", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Color.White)
             }
+
             Text("ADMIN", fontSize = 18.sp, color = Color.White.copy(alpha = .75f))
-            Text("• ".repeat(pin.length).trim(), fontSize = 34.sp, color = Color(0xFF29B6F6))
-            if (error) Text("PIN i pasaktë", color = Color(0xFFFF8A80))
-            Text("Shkruaj PIN-in me tastet numerike", fontSize = 15.sp, color = Color.White.copy(alpha = .7f))
+
+            Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+                repeat(expectedPin.length) { index ->
+                    Text(
+                        text = if (index < pin.length) "●" else "○",
+                        fontSize = 34.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (index < pin.length) Color(0xFF29B6F6) else Color.White.copy(alpha = .55f)
+                    )
+                }
+            }
+
+            if (error) {
+                Text("PIN i pasaktë — provo përsëri", color = Color(0xFFFF8A80), fontSize = 15.sp)
+            } else {
+                Text("Shkruaj PIN-in me tastet numerike", fontSize = 15.sp, color = Color.White.copy(alpha = .70f))
+            }
         }
     }
 }
