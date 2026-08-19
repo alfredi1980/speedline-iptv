@@ -18,7 +18,7 @@ import al.speedline.iptv.data.CredentialsStore
 @Composable
 fun LoginScreen(busy: Boolean, error: String?, onLogin: (String, String) -> Unit) {
     val context = LocalContext.current
-    val mac = remember { CredentialsStore(context.applicationContext).get().username }
+    val mac = remember { CredentialsStore(context.applicationContext).currentMac() }
 
     Box(Modifier.fillMaxSize().background(Color(0xFF071C3A)), contentAlignment = Alignment.Center) {
         Column(
@@ -34,7 +34,7 @@ fun LoginScreen(busy: Boolean, error: String?, onLogin: (String, String) -> Unit
                 Text("LINE", fontSize = 34.sp, fontWeight = FontWeight.Bold, color = Color(0xFF29B6F6))
                 Text(" IPTV", fontSize = 34.sp, fontWeight = FontWeight.Bold, color = Color.White)
             }
-            Text("STALKER PORTAL", fontSize = 17.sp, color = Color.White.copy(alpha = .72f))
+            Text("AKTIVIZIM", fontSize = 17.sp, color = Color.White.copy(alpha = .72f))
             Spacer(Modifier.height(4.dp))
             Text("MAC ADDRESS", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Color.White.copy(alpha = .78f))
             Text(mac, fontSize = 30.sp, fontWeight = FontWeight.Bold, color = Color.White)
