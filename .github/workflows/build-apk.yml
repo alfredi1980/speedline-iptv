@@ -72,10 +72,10 @@ jobs:
           start = next(i for i,l in enumerate(lines) if '- name: Rebuild source and apply v0.2.1 fixes' in l)
           runline = next(i for i in range(start+1, len(lines)) if lines[i].strip() == 'run: |')
           end = next(i for i in range(runline+1, len(lines)) if lines[i].startswith('      - name: Build debug APKs'))
-          body=[]
+          body = []
           for line in lines[runline+1:end]:
               body.append(line[10:] if line.startswith('          ') else line)
-          Path('/tmp/rebuild-v021.sh').write_text('\n'.join(body)+'\n')
+          Path('/tmp/rebuild-v021.sh').write_text('\n'.join(body) + '\n')
           PY
           bash /tmp/rebuild-v021.sh
 
@@ -88,64 +88,7 @@ jobs:
           cp ci/stalker-src/XtreamRepository.kt "$ROOT/data/XtreamRepository.kt"
           cp ci/stalker-src/AdminScreens.kt "$ROOT/ui/AdminScreens.kt"
           cp ci/stalker-src/LoginScreen.kt "$ROOT/ui/LoginScreen.kt"
-
-          python3 - <<'PY'
-          from pathlib import Path
-          import re
-
-          p = Path('build-src/SpeedlineIPTV/app/src/main/java/al/speedline/iptv/ui/PlayerScreen.kt')
-          s = p.read_text()
-          old = '''        val url = remember(current.id, current.type) { repository.playbackUrl(current) }
-        val vodUrls = remember(current.id, current.type, current.containerExtension, current.directSource) { repository.playbackUrls(current) }
-        if (current.type == ContentType.MOVIE || current.type == ContentType.SERIES) {'''
-          new = '''        var resolvedUrls by remember(current.id, current.type, current.directSource) { mutableStateOf<List<String>?>(null) }
-        var resolveError by remember(current.id, current.type, current.directSource) { mutableStateOf<String?>(null) }
-
-        LaunchedEffect(current.id, current.type, current.directSource) {
-            resolvedUrls = null
-            resolveError = null
-            val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                runCatching { repository.playbackUrls(current) }
-            }
-            result.onSuccess { urls ->
-                resolvedUrls = urls.filter { it.isNotBlank() }.distinct()
-                if (resolvedUrls.isNullOrEmpty()) resolveError = "Stream URL mungon"
-            }.onFailure { e ->
-                resolveError = e.message ?: "Kanali nuk mund të hapet"
-            }
-        }
-
-        val vodUrls = resolvedUrls.orEmpty()
-        val url = resolvedUrls?.firstOrNull()
-        if (url == null) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text(resolveError ?: "Duke hapur kanalin…", color = Color.White, fontSize = 20.sp)
-            }
-        } else if (current.type == ContentType.MOVIE || current.type == ContentType.SERIES) {'''
-          if old not in s:
-              raise RuntimeError('Expected PlayerScreen playback block not found')
-          s = s.replace(old, new, 1)
-          p.write_text(s)
-
-          p = Path('build-src/SpeedlineIPTV/app/build.gradle.kts')
-          s = p.read_text()
-          s = s.replace('versionCode = 11', 'versionCode = 13')
-          s = s.replace('versionName = "0.2.1"', 'versionName = "0.3.1"')
-          s = re.sub(r'\n\s*splits\s*\{.*?\n\s*buildFeatures\s*\{', '\n\n    buildFeatures {', s, flags=re.S)
-          if 'splits {' not in s:
-              s = s.replace('\n    buildFeatures {', '''
-    splits {
-        abi {
-            isEnable = true
-            reset()
-            include("arm64-v8a", "armeabi-v7a")
-            isUniversalApk = false
-        }
-    }
-
-    buildFeatures {''', 1)
-          p.write_text(s)
-          PY
+          python3 ci/stalker-src/apply_v031.py
 
       - name: Build Portal ARM32 and ARM64 APKs
         working-directory: build-src/SpeedlineIPTV
