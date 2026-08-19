@@ -38,8 +38,8 @@ jobs:
           unzip -oq v016-overrides.zip -d build-src/SpeedlineIPTV
           cat ci/v017/part_*.b64 | tr -d '\r\n' | base64 -d > v017-overrides.zip
           unzip -oq v017-overrides.zip -d build-src/SpeedlineIPTV
-          cat ci/v017fix/part_*.b64 | tr -d '\r\n' | base64 -d > v017fix-overrides.zip
-          unzip -oq v017fix-overrides.zip -d build-src/SpeedlineIPTV
+          cp ci/v017fix/AdminScreens.kt build-src/SpeedlineIPTV/app/src/main/java/al/speedline/iptv/ui/AdminScreens.kt
+          cp ci/v017fix/BrowseScreen.kt build-src/SpeedlineIPTV/app/src/main/java/al/speedline/iptv/ui/BrowseScreen.kt
           sed -i '/org.jetbrains.kotlin.android/d' build-src/SpeedlineIPTV/app/build.gradle.kts
           echo "v0.1.7 source rebuilt"
 
