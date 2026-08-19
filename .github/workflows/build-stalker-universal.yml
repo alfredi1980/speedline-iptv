@@ -25,40 +25,45 @@ jobs:
         with:
           gradle-version: '9.5.0'
 
-      - name: Rebuild source and apply Stalker overlay
+      - name: Rebuild verified v0.2.1 source
         run: |
-          cat ci/source/part_*.b64 | tr -d '\r\n' | base64 -d > base.zip
-          unzip -q base.zip -d build-src
-          sed -i '/org.jetbrains.kotlin.android/d' build-src/SpeedlineIPTV/build.gradle.kts
+          python3 - <<'PY'
+          from pathlib import Path
+          lines = Path('.github/workflows/build-apk.yml').read_text().splitlines()
+          start = next(i for i,l in enumerate(lines) if '- name: Rebuild source and apply v0.2.1 fixes' in l)
+          runline = next(i for i in range(start+1, len(lines)) if lines[i].strip() == 'run: |')
+          end = next(i for i in range(runline+1, len(lines)) if lines[i].startswith('      - name: Build debug APKs'))
+          body=[]
+          for line in lines[runline+1:end]:
+              body.append(line[10:] if line.startswith('          ') else line)
+          Path('/tmp/rebuild-v021.sh').write_text('\n'.join(body)+'\n')
+          PY
+          bash /tmp/rebuild-v021.sh
 
-          cat ci/v015/part_*.b64 | tr -d '\r\n' | base64 -d > v015.zip
-          unzip -oq v015.zip -d build-src/SpeedlineIPTV
-          cat ci/v016/part_*.b64 | tr -d '\r\n' | base64 -d > v016.zip
-          unzip -oq v016.zip -d build-src/SpeedlineIPTV
-          cat ci/v017/part_*.b64 | tr -d '\r\n' | base64 -d > v017.zip
-          unzip -oq v017.zip -d build-src/SpeedlineIPTV
-          cp ci/v017fix/BrowseScreen.kt build-src/SpeedlineIPTV/app/src/main/java/al/speedline/iptv/ui/BrowseScreen.kt
-          cat ci/v019/part_*.b64 | tr -d '\r\n' | base64 -d > v019.zip
-          unzip -oq v019.zip -d build-src/SpeedlineIPTV
-
-          cat ci/stalker/part_*.b64 | tr -d '\r\n' | base64 -d > stalker-overlay.zip
-          unzip -oq stalker-overlay.zip -d build-src/SpeedlineIPTV/app/src/main/java
-
-          sed -i '/org.jetbrains.kotlin.android/d' build-src/SpeedlineIPTV/app/build.gradle.kts
+      - name: Apply Stalker portal source
+        run: |
+          ROOT=build-src/SpeedlineIPTV/app/src/main/java/al/speedline/iptv
+          cp ci/stalker-src/AppConfig.kt "$ROOT/AppConfig.kt"
+          cp ci/stalker-src/CredentialsStore.kt "$ROOT/data/CredentialsStore.kt"
+          cp ci/stalker-src/XtreamApi.kt "$ROOT/data/XtreamApi.kt"
+          cp ci/stalker-src/XtreamRepository.kt "$ROOT/data/XtreamRepository.kt"
+          cp ci/stalker-src/AdminScreens.kt "$ROOT/ui/AdminScreens.kt"
 
           python3 - <<'PY'
           from pathlib import Path
+          import re
           p = Path('build-src/SpeedlineIPTV/app/build.gradle.kts')
           s = p.read_text()
-          s = s.replace('versionCode = 9', 'versionCode = 12')
-          s = s.replace('versionName = "0.1.9"', 'versionName = "0.3.0-stalker"')
+          s = s.replace('versionCode = 11', 'versionCode = 12')
+          s = s.replace('versionName = "0.2.1"', 'versionName = "0.3.0-stalker"')
+          s = re.sub(r'\n\s*split[s]?\s*\{.*?\n\s*buildFeatures\s*\{', '\n\n    buildFeatures {', s, flags=re.S)
           if 'abiFilters' not in s:
               s = s.replace('defaultConfig {', 'defaultConfig {\n        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }', 1)
           p.write_text(s)
           PY
 
           echo 'Stalker universal source prepared.'
-          grep -n 'versionName\|abiFilters' build-src/SpeedlineIPTV/app/build.gradle.kts
+          grep -n 'versionName\|abiFilters\|splits' build-src/SpeedlineIPTV/app/build.gradle.kts || true
 
       - name: Build universal ARM APK
         working-directory: build-src/SpeedlineIPTV
@@ -67,7 +72,8 @@ jobs:
       - name: Verify APK
         run: |
           ls -lh build-src/SpeedlineIPTV/app/build/outputs/apk/debug/*.apk
-          cp build-src/SpeedlineIPTV/app/build/outputs/apk/debug/app-debug.apk SpeedlineIPTV-Stalker-v0.3.0-universal-arm.apk
+          APK=$(find build-src/SpeedlineIPTV/app/build/outputs/apk/debug -name '*.apk' | head -1)
+          cp "$APK" SpeedlineIPTV-Stalker-v0.3.0-universal-arm.apk
           sha256sum SpeedlineIPTV-Stalker-v0.3.0-universal-arm.apk > SpeedlineIPTV-Stalker-v0.3.0-universal-arm.sha256
 
       - name: Upload universal Stalker APK
