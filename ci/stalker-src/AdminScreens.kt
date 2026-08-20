@@ -15,15 +15,19 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Button
 import androidx.tv.material3.Text
+import al.speedline.iptv.data.CredentialsStore
 import al.speedline.iptv.data.XtreamRepository
 
 @Composable
 fun AdminPinScreen(expectedPin: String, onSuccess: () -> Unit, onBack: () -> Unit) {
+    val context = LocalContext.current
+    val activePin = remember { CredentialsStore(context.applicationContext).adminPin() }
     var pin by remember { mutableStateOf("") }
     var error by remember { mutableStateOf(false) }
     val requester = remember { FocusRequester() }
@@ -49,10 +53,10 @@ fun AdminPinScreen(expectedPin: String, onSuccess: () -> Unit, onBack: () -> Uni
             when {
                 digit != null -> {
                     error = false
-                    if (pin.length < expectedPin.length) {
+                    if (pin.length < activePin.length) {
                         val next = pin + digit
-                        if (next.length == expectedPin.length) {
-                            if (next == expectedPin) { pin = next; onSuccess() } else { pin = ""; error = true }
+                        if (next.length == activePin.length) {
+                            if (next == activePin) { pin = next; onSuccess() } else { pin = ""; error = true }
                         } else pin = next
                     }
                     true
@@ -76,7 +80,7 @@ fun AdminPinScreen(expectedPin: String, onSuccess: () -> Unit, onBack: () -> Uni
             }
             Text("ADMIN", fontSize = 18.sp, color = Color.White.copy(alpha = .75f))
             Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
-                repeat(expectedPin.length) { i ->
+                repeat(activePin.length) { i ->
                     Text(if (i < pin.length) "●" else "○", fontSize = 34.sp, fontWeight = FontWeight.Bold,
                         color = if (i < pin.length) Color(0xFF29B6F6) else Color.White.copy(alpha=.55f))
                 }
@@ -89,7 +93,10 @@ fun AdminPinScreen(expectedPin: String, onSuccess: () -> Unit, onBack: () -> Uni
 
 @Composable
 fun AdminSettingsScreen(repository: XtreamRepository, onSaved: () -> Unit, onBack: () -> Unit) {
+    val context = LocalContext.current
+    val store = remember { CredentialsStore(context.applicationContext) }
     var mac by remember { mutableStateOf(repository.stalkerMac()) }
+    var adminPin by remember { mutableStateOf(store.adminPin()) }
     var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
 
@@ -112,17 +119,31 @@ fun AdminSettingsScreen(repository: XtreamRepository, onSaved: () -> Unit, onBac
                 modifier = Modifier.fillMaxWidth()
             )
             M3Text("Formati: 00:1A:79:XX:XX:XX", color = Color.White.copy(alpha=.72f), fontSize = 14.sp)
+
+            OutlinedTextField(
+                value = adminPin,
+                onValueChange = { value -> adminPin = value.filter { it.isDigit() }.take(8) },
+                label = { M3Text("PIN Admin", color = Color.White) },
+                singleLine = true,
+                textStyle = LocalTextStyle.current.copy(color = Color.White),
+                modifier = Modifier.fillMaxWidth()
+            )
+            M3Text("PIN fillestar: 1009. Mund të vendosësh 4 deri 8 shifra.", color = Color.White.copy(alpha=.72f), fontSize = 14.sp)
+
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Button(onClick = onBack) { Text("ANULO") }
-                Button(enabled = !busy && mac.isNotBlank(), onClick = {
+                Button(enabled = !busy && mac.isNotBlank() && adminPin.length in 4..8, onClick = {
                     busy = true
-                    message = "Duke verifikuar…"
+                    message = "Duke ruajtur…"
                     Thread {
-                        val result = repository.updateMacBlocking(mac)
+                        val result = runCatching {
+                            store.saveAdminPin(adminPin)
+                            repository.updateMacBlocking(mac).getOrThrow()
+                        }
                         android.os.Handler(android.os.Looper.getMainLooper()).post {
                             busy = false
-                            result.onSuccess { message = "MAC u ruajt me sukses"; onSaved() }
-                                .onFailure { message = it.message ?: "MAC nuk u pranua" }
+                            result.onSuccess { message = "Cilësimet u ruajtën"; onSaved() }
+                                .onFailure { message = it.message ?: "Cilësimet nuk u ruajtën" }
                         }
                     }.start()
                 }) { Text(if (busy) "PRIT…" else "RUAJ") }
