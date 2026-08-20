@@ -1,6 +1,7 @@
 package al.speedline.iptv.data
 
 import android.content.Context
+import java.util.concurrent.ConcurrentHashMap
 
 class XtreamRepository(context: Context) {
     private val app = context.applicationContext
@@ -8,6 +9,10 @@ class XtreamRepository(context: Context) {
     private val cache = CacheStore(app)
     private val api = XtreamApi()
     @Volatile private var token: String? = null
+
+    private data class CachedLink(val url: String, val createdAt: Long)
+    private val liveLinkCache = ConcurrentHashMap<Int, CachedLink>()
+    private val liveLinkTtlMs = 90_000L
 
     fun credentials(): Credentials? = auth.get()
     fun stalkerMac(): String = auth.currentMac()
@@ -21,6 +26,7 @@ class XtreamRepository(context: Context) {
     fun loginBlocking(username: String, password: String = "stalker"): Result<XtreamAccount> = runCatching {
         auth.saveMac(username, activate = false)
         token = null
+        liveLinkCache.clear()
         val mac = stalkerMac()
         ensureSession(mac)
         syncAllBlocking(Credentials(mac, "stalker")).getOrThrow()
@@ -31,6 +37,7 @@ class XtreamRepository(context: Context) {
     fun updateMacBlocking(mac: String): Result<Unit> = runCatching {
         auth.saveMac(mac, activate = false)
         token = null
+        liveLinkCache.clear()
         val normalized = stalkerMac()
         ensureSession(normalized)
         syncAllBlocking(Credentials(normalized, "stalker")).getOrThrow()
@@ -40,6 +47,7 @@ class XtreamRepository(context: Context) {
     fun syncAllBlocking(credentials: Credentials? = auth.get()): Result<Unit> = runCatching {
         val mac = credentials?.username ?: stalkerMac()
         token = null
+        liveLinkCache.clear()
         val t = ensureSession(mac)
         val payloads = linkedMapOf(
             "live_categories.json" to api.liveCategories(mac, t),
@@ -87,14 +95,30 @@ class XtreamRepository(context: Context) {
         val cmd = item.directSource.trim()
         require(cmd.isNotBlank()) { "Komanda e kanalit mungon" }
         if (cmd.startsWith("http://", true) || cmd.startsWith("https://", true)) return listOf(cmd)
+
+        if (item.type == ContentType.LIVE) {
+            val now = System.currentTimeMillis()
+            liveLinkCache[item.id]?.takeIf { now - it.createdAt < liveLinkTtlMs }?.let {
+                return listOf(it.url)
+            }
+        }
+
         val mac = stalkerMac()
         var t = ensureSession(mac)
-        return runCatching { listOf(api.createLink(mac, t, item.type, cmd)) }.getOrElse {
+        val resolved = runCatching { api.createLink(mac, t, item.type, cmd) }.getOrElse {
             token = null
             t = ensureSession(mac)
-            listOf(api.createLink(mac, t, item.type, cmd))
+            api.createLink(mac, t, item.type, cmd)
         }
+
+        if (item.type == ContentType.LIVE) {
+            liveLinkCache[item.id] = CachedLink(resolved, System.currentTimeMillis())
+        }
+        return listOf(resolved)
     }
 
-    fun logout() = auth.clear()
+    fun logout() {
+        liveLinkCache.clear()
+        auth.clear()
+    }
 }
