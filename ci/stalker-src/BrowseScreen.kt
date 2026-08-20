@@ -41,7 +41,7 @@ fun BrowseScreen(
     val favorites = remember { FavoritesStore(context) }
     var favoriteRevision by remember { mutableIntStateOf(0) }
     val categories = remember(type, dataRevision) { repository.categories(type) }
-    var selectedCategory by remember(type, dataRevision) { mutableStateOf<String?>(null) }
+    var selectedCategory by remember(type, dataRevision) { mutableStateOf(categories.firstOrNull()?.id) }
     var streams by remember(type, selectedCategory, favoritesOnly, favoriteRevision, dataRevision) {
         mutableStateOf(
             repository.streams(type, if (favoritesOnly) null else selectedCategory).let {
@@ -55,7 +55,7 @@ fun BrowseScreen(
     var focusStreamsAfterCategory by remember { mutableStateOf(false) }
     val firstStreamRequester = remember { FocusRequester() }
 
-    fun selectCategory(id: String?) {
+    fun selectCategory(id: String) {
         selectedCategory = id
         streams = repository.streams(type, id)
         focusStreamsAfterCategory = true
@@ -124,16 +124,6 @@ fun BrowseScreen(
             Spacer(Modifier.height(14.dp))
 
             if (!favoritesOnly) {
-                Button(
-                    onClick = { selectCategory(null) },
-                    modifier = Modifier.fillMaxWidth().height(48.dp),
-                    colors = ButtonDefaults.colors(
-                        containerColor = if (selectedCategory == null) Color(0xCC147CE5) else card,
-                        focusedContainerColor = Color(0xFF168BE0)
-                    )
-                ) { Text("ALL", maxLines = 1, fontSize = 15.sp) }
-                Spacer(Modifier.height(7.dp))
-
                 LazyColumn(
                     verticalArrangement = Arrangement.spacedBy(7.dp),
                     modifier = Modifier.weight(1f)
