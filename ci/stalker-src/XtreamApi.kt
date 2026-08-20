@@ -11,15 +11,18 @@ import java.net.URLEncoder
 
 class XtreamApi {
     private fun enc(v: String) = URLEncoder.encode(v, Charsets.UTF_8.name())
+    @Volatile private var preferredEndpoint: String? = null
 
     private val endpointCandidates: List<String>
         get() {
             val root = AppConfig.STALKER_PORTAL_URL.trimEnd('/').removeSuffix("/c")
-            return listOf(
+            val all = listOf(
                 "$root/portal.php",
                 "$root/server/load.php",
                 "${root.trimEnd('/')}/stalker_portal/server/load.php"
             ).distinct()
+            val preferred = preferredEndpoint
+            return if (preferred.isNullOrBlank()) all else listOf(preferred) + all.filter { it != preferred }
         }
 
     private fun request(mac: String, token: String?, type: String, action: String, extra: Map<String, String> = emptyMap()): String {
@@ -32,8 +35,8 @@ class XtreamApi {
                 val query = params.entries.joinToString("&") { "${enc(it.key)}=${enc(it.value)}" }
                 val url = URI.create("$endpoint?$query").toURL()
                 val c = (url.openConnection() as HttpURLConnection).apply {
-                    connectTimeout = 8_000
-                    readTimeout = 30_000
+                    connectTimeout = 5_000
+                    readTimeout = 15_000
                     requestMethod = "GET"
                     instanceFollowRedirects = true
                     setRequestProperty("User-Agent", AppConfig.APP_USER_AGENT)
@@ -50,6 +53,7 @@ class XtreamApi {
                     val body = BufferedReader(InputStreamReader(stream)).use { it.readText() }
                     if (code !in 200..299) error("HTTP $code")
                     if (body.isBlank() || (!body.trimStart().startsWith("{") && !body.trimStart().startsWith("["))) error("Përgjigje jo-JSON nga portal")
+                    preferredEndpoint = endpoint
                     return body
                 } finally { c.disconnect() }
             } catch (t: Throwable) { last = t }
