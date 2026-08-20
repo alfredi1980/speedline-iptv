@@ -43,7 +43,7 @@ jobs:
           path: build-src/SpeedlineIPTV/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
 
-  build-portal-v032:
+  build-portal-v033:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -79,7 +79,7 @@ jobs:
           PY
           bash /tmp/rebuild-v021.sh
 
-      - name: Apply Portal source and v0.3.2 fixes
+      - name: Apply Portal source and v0.3.3 fixes
         run: |
           ROOT=build-src/SpeedlineIPTV/app/src/main/java/al/speedline/iptv
           cp ci/stalker-src/AppConfig.kt "$ROOT/AppConfig.kt"
@@ -102,17 +102,17 @@ jobs:
           ARM64=$(find build-src/SpeedlineIPTV/app/build/outputs/apk/debug -name '*arm64-v8a*.apk' | head -1)
           test -n "$ARM32" -a -f "$ARM32"
           test -n "$ARM64" -a -f "$ARM64"
-          cp "$ARM32" SpeedlineIPTV-Portal-v0.3.2-ARM32.apk
-          cp "$ARM64" SpeedlineIPTV-Portal-v0.3.2-ARM64.apk
-          sha256sum SpeedlineIPTV-Portal-v0.3.2-ARM32.apk SpeedlineIPTV-Portal-v0.3.2-ARM64.apk > SpeedlineIPTV-Portal-v0.3.2.sha256
-          ls -lh SpeedlineIPTV-Portal-v0.3.2-*.apk
+          cp "$ARM32" SpeedlineIPTV-Portal-v0.3.3-ARM32.apk
+          cp "$ARM64" SpeedlineIPTV-Portal-v0.3.3-ARM64.apk
+          sha256sum SpeedlineIPTV-Portal-v0.3.3-ARM32.apk SpeedlineIPTV-Portal-v0.3.3-ARM64.apk > SpeedlineIPTV-Portal-v0.3.3.sha256
+          ls -lh SpeedlineIPTV-Portal-v0.3.3-*.apk
 
       - name: Upload Portal APKs
         uses: actions/upload-artifact@v4
         with:
-          name: SpeedlineIPTV-Portal-v0.3.2
+          name: SpeedlineIPTV-Portal-v0.3.3
           path: |
-            SpeedlineIPTV-Portal-v0.3.2-ARM32.apk
-            SpeedlineIPTV-Portal-v0.3.2-ARM64.apk
-            SpeedlineIPTV-Portal-v0.3.2.sha256
+            SpeedlineIPTV-Portal-v0.3.3-ARM32.apk
+            SpeedlineIPTV-Portal-v0.3.3-ARM64.apk
+            SpeedlineIPTV-Portal-v0.3.3.sha256
           if-no-files-found: error
