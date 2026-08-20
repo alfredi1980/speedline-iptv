@@ -41,10 +41,20 @@ fun BrowseScreen(
     val favorites = remember { FavoritesStore(context) }
     var favoriteRevision by remember { mutableIntStateOf(0) }
     val categories = remember(type, dataRevision) { repository.categories(type) }
-    var selectedCategory by remember(type, dataRevision) { mutableStateOf(categories.firstOrNull()?.id) }
+    val allId = "__ALL__"
+    val allLabel = when (type) {
+        ContentType.LIVE -> "TE GJITHA"
+        ContentType.MOVIE -> "TE GJITHË"
+        ContentType.SERIES -> "TË GJITHA"
+    }
+
+    var selectedCategory by remember(type, dataRevision) { mutableStateOf(allId) }
     var streams by remember(type, selectedCategory, favoritesOnly, favoriteRevision, dataRevision) {
         mutableStateOf(
-            repository.streams(type, if (favoritesOnly) null else selectedCategory).let {
+            repository.streams(
+                type,
+                if (favoritesOnly || selectedCategory == allId) null else selectedCategory
+            ).let {
                 if (favoritesOnly) favorites.filter(it) else it
             }
         )
@@ -57,7 +67,7 @@ fun BrowseScreen(
 
     fun selectCategory(id: String) {
         selectedCategory = id
-        streams = repository.streams(type, id)
+        streams = repository.streams(type, if (id == allId) null else id)
         focusStreamsAfterCategory = true
     }
 
@@ -85,6 +95,9 @@ fun BrowseScreen(
     val panel = Color(0xAA071C3A)
     val card = Color(0xB8254772)
     val cyan = Color(0xFF29B6F6)
+    val liveCard = Color(0xFF23C552)
+    val liveFocusedCard = Color(0xFF39E86B)
+    val listBackground = if (type == ContentType.LIVE) Color(0xCC0A2644) else Color(0x99051632)
 
     Row(
         Modifier
@@ -128,6 +141,18 @@ fun BrowseScreen(
                     verticalArrangement = Arrangement.spacedBy(7.dp),
                     modifier = Modifier.weight(1f)
                 ) {
+                    item {
+                        val selected = selectedCategory == allId
+                        Button(
+                            onClick = { selectCategory(allId) },
+                            modifier = Modifier.fillMaxWidth().height(48.dp),
+                            colors = ButtonDefaults.colors(
+                                containerColor = if (selected) Color(0xCC147CE5) else card,
+                                focusedContainerColor = Color(0xFF168BE0)
+                            )
+                        ) { Text(allLabel, maxLines = 1, fontSize = 15.sp, fontWeight = FontWeight.SemiBold) }
+                    }
+
                     itemsIndexed(categories) { _, cat ->
                         val selected = cat.id == selectedCategory
                         Button(
@@ -164,8 +189,8 @@ fun BrowseScreen(
             Modifier
                 .weight(1f)
                 .fillMaxHeight()
-                .background(Color(0x88051632), RoundedCornerShape(20.dp))
-                .border(1.dp, Color(0x4434A9FF), RoundedCornerShape(20.dp))
+                .background(listBackground, RoundedCornerShape(20.dp))
+                .border(1.dp, Color(0x6634A9FF), RoundedCornerShape(20.dp))
                 .padding(18.dp)
         ) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -180,9 +205,9 @@ fun BrowseScreen(
                         "${item.channelNumber ?: (index + 1)}   "
                     } else ""
                     val itemModifier = if (index == 0) {
-                        Modifier.fillMaxWidth().height(46.dp).focusRequester(firstStreamRequester)
+                        Modifier.fillMaxWidth().height(if (type == ContentType.LIVE) 50.dp else 46.dp).focusRequester(firstStreamRequester)
                     } else {
-                        Modifier.fillMaxWidth().height(46.dp)
+                        Modifier.fillMaxWidth().height(if (type == ContentType.LIVE) 50.dp else 46.dp)
                     }
                     Button(
                         onClick = {
@@ -194,17 +219,23 @@ fun BrowseScreen(
                         },
                         modifier = itemModifier,
                         colors = ButtonDefaults.colors(
-                            containerColor = card,
-                            focusedContainerColor = Color(0xFF147CE5)
+                            containerColor = if (type == ContentType.LIVE) liveCard else card,
+                            focusedContainerColor = if (type == ContentType.LIVE) liveFocusedCard else Color(0xFF147CE5)
                         )
                     ) {
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                            Text(numberPrefix, fontSize = 14.sp, color = cyan, fontWeight = FontWeight.Bold)
+                            Text(
+                                numberPrefix,
+                                fontSize = if (type == ContentType.LIVE) 17.sp else 14.sp,
+                                color = if (type == ContentType.LIVE) Color(0xFF062A14) else cyan,
+                                fontWeight = FontWeight.Bold
+                            )
                             Text(
                                 "${if (fav) "★ " else ""}${item.name}",
                                 maxLines = 1,
-                                fontSize = 15.sp,
-                                color = Color.White
+                                fontSize = if (type == ContentType.LIVE) 18.sp else 15.sp,
+                                fontWeight = if (type == ContentType.LIVE) FontWeight.SemiBold else FontWeight.Normal,
+                                color = if (type == ContentType.LIVE) Color(0xFF03150A) else Color.White
                             )
                         }
                     }
