@@ -32,6 +32,17 @@ class CredentialsStore(private val context: Context) {
 
     fun clear() = prefs.edit().putBoolean("activated", false).apply()
 
+    fun adminPin(): String {
+        val pin = prefs.getString("admin_pin", null).orEmpty()
+        return if (pin.matches(Regex("^[0-9]{4,8}$"))) pin else "1009"
+    }
+
+    fun saveAdminPin(pin: String) {
+        val normalized = pin.trim()
+        require(normalized.matches(Regex("^[0-9]{4,8}$"))) { "PIN duhet të ketë 4 deri 8 shifra" }
+        prefs.edit().putString("admin_pin", normalized).apply()
+    }
+
     private fun generateDeviceMac(): String {
         val suffix = hardwareSuffix() ?: androidIdSuffix()
         return "00:1A:79:${suffix.substring(0,2)}:${suffix.substring(2,4)}:${suffix.substring(4,6)}"
