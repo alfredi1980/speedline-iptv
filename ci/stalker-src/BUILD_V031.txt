@@ -1,0 +1,5 @@
+Speedline IPTV Portal v0.3.1
+MAC login visible on first install.
+Playback link resolution off UI thread.
+Admin UI hides portal URL and protocol label.
+Separate ARM32 and ARM64 APKs.

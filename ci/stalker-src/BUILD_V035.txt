@@ -1,0 +1,9 @@
+Speedline IPTV Portal v0.3.5
+
+- Adds TË GJITHA for all Live TV channels.
+- Adds TË GJITHË for all movies.
+- Restyles the in-player channel list to match the main two-panel interface.
+- Removes parallel Stalker create_link prefetch requests.
+- Serializes portal link resolution and retries once with a fresh token.
+- Falls back from Media3 to bundled LibVLC when AUTO playback encounters a fatal error.
+- Builds separate ARM32 and ARM64 APKs.
