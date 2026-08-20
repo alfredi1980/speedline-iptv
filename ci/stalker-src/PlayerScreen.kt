@@ -262,7 +262,11 @@ fun PlayerScreen(
         } else if (current.type == ContentType.MOVIE || current.type == ContentType.SERIES) {
             // VOD commonly contains codecs that are not exposed by MediaCodec on
             // low-cost Android TV boxes. LibVLC bundles a much wider decoder set.
-            VlcSurface(url = url, modifier = Modifier.fillMaxSize())
+            VlcSurface(
+                url = url,
+                modifier = Modifier.fillMaxSize(),
+                enableVodControls = true
+            )
         } else if (useVlcFallback) {
             VlcSurface(url = url, modifier = Modifier.fillMaxSize())
         } else if (useIjk && IjkReflectionPlayer.isAvailable()) {
@@ -326,58 +330,17 @@ private fun ChannelListOverlay(
     listState: androidx.compose.foundation.lazy.LazyListState
 ) {
     val cyan = Color(0xFF35DDF4)
-    val sidePanel = Color(0xF0121922)
     val listPanel = Color(0xF5111820)
-    val categorySelected = Color(0xD51A6FB2)
 
-    Row(
+    Box(
         Modifier
             .fillMaxSize()
-            .background(Color(0xD9070E16))
-            .padding(horizontal = 24.dp, vertical = 18.dp),
-        horizontalArrangement = Arrangement.spacedBy(16.dp)
+            .background(Color(0x76070E16))
+            .padding(horizontal = 24.dp, vertical = 18.dp)
     ) {
         Column(
             Modifier
-                .width(235.dp)
-                .fillMaxHeight()
-                .background(sidePanel, RoundedCornerShape(14.dp))
-                .border(1.dp, Color(0x5535DDF4), RoundedCornerShape(14.dp))
-                .padding(14.dp)
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("SPEED", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                Text("LINE", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = cyan)
-            }
-            Text("I P T V", fontSize = 12.sp, color = Color.White.copy(alpha = 0.72f))
-            Spacer(Modifier.height(18.dp))
-            Text("KANALET", fontSize = 20.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
-            Spacer(Modifier.height(10.dp))
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .height(42.dp)
-                    .background(categorySelected, RoundedCornerShape(21.dp))
-                    .padding(horizontal = 14.dp),
-                contentAlignment = Alignment.CenterStart
-            ) {
-                Text("TË GJITHA", fontSize = 14.sp, color = Color.White, fontWeight = FontWeight.SemiBold)
-            }
-            Spacer(Modifier.weight(1f))
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .height(40.dp)
-                    .background(Color(0x80303B49), RoundedCornerShape(20.dp)),
-                contentAlignment = Alignment.Center
-            ) {
-                Text("← BACK", fontSize = 13.sp, color = Color.White)
-            }
-        }
-
-        Column(
-            Modifier
-                .weight(1f)
+                .width(560.dp)
                 .fillMaxHeight()
                 .background(listPanel, RoundedCornerShape(14.dp))
                 .border(1.dp, Color(0x6635DDF4), RoundedCornerShape(14.dp))
@@ -444,8 +407,8 @@ private fun Media3Surface(url: String, modifier: Modifier, onFatalError: () -> U
     val player = remember {
         val httpFactory = DefaultHttpDataSource.Factory()
             .setUserAgent(AppConfig.APP_USER_AGENT)
-            .setConnectTimeoutMs(8_000)
-            .setReadTimeoutMs(25_000)
+            .setConnectTimeoutMs(5_000)
+            .setReadTimeoutMs(10_000)
             .setAllowCrossProtocolRedirects(true)
 
         ExoPlayer.Builder(context)
@@ -470,6 +433,10 @@ private fun Media3Surface(url: String, modifier: Modifier, onFatalError: () -> U
         player.setMediaItem(MediaItem.fromUri(url))
         player.prepare()
         player.playWhenReady = true
+        delay(8_000)
+        if (player.playbackState != Player.STATE_READY && player.playbackState != Player.STATE_ENDED) {
+            latestOnFatalError()
+        }
     }
 
     AndroidView(
@@ -488,7 +455,11 @@ private fun Media3Surface(url: String, modifier: Modifier, onFatalError: () -> U
 }
 
 @Composable
-private fun VlcSurface(url: String, modifier: Modifier) {
+private fun VlcSurface(
+    url: String,
+    modifier: Modifier,
+    enableVodControls: Boolean = false
+) {
     val context = LocalContext.current
     val libVlc = remember {
         LibVLC(
@@ -502,6 +473,66 @@ private fun VlcSurface(url: String, modifier: Modifier) {
     }
     val player = remember { VlcMediaPlayer(libVlc) }
     var videoLayout by remember { mutableStateOf<VLCVideoLayout?>(null) }
+    var showVodControls by remember(url) { mutableStateOf(enableVodControls) }
+    var controlsRevision by remember(url) { mutableIntStateOf(0) }
+
+    fun revealVodControls() {
+        if (!enableVodControls) return
+        showVodControls = true
+        controlsRevision++
+    }
+
+    fun handleVodKey(event: KeyEvent): Boolean {
+        if (!enableVodControls || event.action != KeyEvent.ACTION_DOWN) return false
+        return when (event.keyCode) {
+            KeyEvent.KEYCODE_DPAD_RIGHT,
+            KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> {
+                revealVodControls()
+                val currentTime = player.time.coerceAtLeast(0L)
+                val length = player.length
+                val target = if (length > 0L) {
+                    kotlin.math.min(currentTime + 10_000L, length)
+                } else {
+                    currentTime + 10_000L
+                }
+                runCatching { player.time = target }
+                true
+            }
+
+            KeyEvent.KEYCODE_DPAD_LEFT,
+            KeyEvent.KEYCODE_MEDIA_REWIND -> {
+                revealVodControls()
+                runCatching { player.time = kotlin.math.max(0L, player.time - 10_000L) }
+                true
+            }
+
+            KeyEvent.KEYCODE_DPAD_CENTER,
+            KeyEvent.KEYCODE_ENTER,
+            KeyEvent.KEYCODE_NUMPAD_ENTER,
+            KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> {
+                revealVodControls()
+                if (event.repeatCount == 0) {
+                    runCatching { if (player.isPlaying) player.pause() else player.play() }
+                }
+                true
+            }
+
+            KeyEvent.KEYCODE_MEDIA_PLAY -> {
+                revealVodControls()
+                runCatching { player.play() }
+                true
+            }
+
+            KeyEvent.KEYCODE_MEDIA_PAUSE,
+            KeyEvent.KEYCODE_MEDIA_STOP -> {
+                revealVodControls()
+                runCatching { player.pause() }
+                true
+            }
+
+            else -> false
+        }
+    }
 
     DisposableEffect(player, libVlc) {
         onDispose {
@@ -509,6 +540,13 @@ private fun VlcSurface(url: String, modifier: Modifier) {
             runCatching { player.detachViews() }
             runCatching { player.release() }
             runCatching { libVlc.release() }
+        }
+    }
+
+    LaunchedEffect(url, enableVodControls, controlsRevision) {
+        if (enableVodControls) {
+            delay(4_000)
+            showVodControls = false
         }
     }
 
@@ -527,19 +565,42 @@ private fun VlcSurface(url: String, modifier: Modifier) {
         player.play()
     }
 
-    AndroidView(
-        modifier = modifier,
-        factory = { ctx ->
-            VLCVideoLayout(ctx).also {
-                it.keepScreenOn = true
-                videoLayout = it
+    Box(modifier = modifier) {
+        AndroidView(
+            modifier = Modifier.fillMaxSize(),
+            factory = { ctx ->
+                VLCVideoLayout(ctx).also { view ->
+                    view.keepScreenOn = true
+                    view.isFocusable = enableVodControls
+                    view.isFocusableInTouchMode = enableVodControls
+                    view.setOnKeyListener { _, _, event -> handleVodKey(event) }
+                    videoLayout = view
+                    if (enableVodControls) view.post { view.requestFocus() }
+                }
+            },
+            update = { view ->
+                view.keepScreenOn = true
+                view.isFocusable = enableVodControls
+                view.isFocusableInTouchMode = enableVodControls
+                view.setOnKeyListener { _, _, event -> handleVodKey(event) }
+                if (videoLayout !== view) videoLayout = view
+                if (enableVodControls && !view.hasFocus()) view.post { view.requestFocus() }
             }
-        },
-        update = { view ->
-            view.keepScreenOn = true
-            if (videoLayout !== view) videoLayout = view
+        )
+
+        if (showVodControls) {
+            Text(
+                text = "←  -10s      OK  PAUSE / PLAY      +10s  →",
+                color = Color.White,
+                fontSize = 14.sp,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 22.dp)
+                    .background(Color(0x99000000), RoundedCornerShape(10.dp))
+                    .padding(horizontal = 18.dp, vertical = 8.dp)
+            )
         }
-    )
+    }
 }
 
 @Composable

@@ -1,0 +1,9 @@
+Speedline IPTV Portal v0.3.6
+
+- Keeps only the channel list on the in-player channel screen; the left sidebar is removed.
+- Adds movie and episode remote controls: LEFT seeks back 10 seconds, RIGHT seeks forward 10 seconds, and OK toggles pause/play.
+- Shows a short on-screen reminder for the movie controls and hides it automatically after four seconds.
+- Stops a catalogue refresh from discarding the active portal token and resolved live links.
+- Refreshes the catalogue on launch only when its cached data is missing or at least 24 hours old.
+- Reduces live connection/read timeouts and switches from Media3 to the fallback player when startup is still not ready after eight seconds.
+- Builds separate ARM32 and ARM64 APKs.

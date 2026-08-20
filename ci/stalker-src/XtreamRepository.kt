@@ -47,8 +47,9 @@ class XtreamRepository(context: Context) {
 
     fun syncAllBlocking(credentials: Credentials? = auth.get()): Result<Unit> = runCatching {
         val mac = credentials?.username ?: stalkerMac()
-        token = null
-        clearPlaybackCache()
+        // A catalogue refresh may run while the user is watching TV. Keep the
+        // active portal session and resolved live links so refresh cannot stall
+        // or invalidate an in-flight create_link request.
         val t = ensureSession(mac)
         val payloads = linkedMapOf(
             "live_categories.json" to api.liveCategories(mac, t),
