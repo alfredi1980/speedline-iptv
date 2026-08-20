@@ -2,6 +2,8 @@ package al.speedline.iptv.data
 
 import android.content.Context
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 class XtreamRepository(context: Context) {
     private val app = context.applicationContext
@@ -11,7 +13,10 @@ class XtreamRepository(context: Context) {
     @Volatile private var token: String? = null
 
     private data class CachedLink(val url: String, val createdAt: Long)
+    private data class InFlight(val latch: CountDownLatch = CountDownLatch(1))
+
     private val liveLinkCache = ConcurrentHashMap<Int, CachedLink>()
+    private val liveLinkInFlight = ConcurrentHashMap<Int, InFlight>()
     private val liveLinkTtlMs = 90_000L
 
     fun credentials(): Credentials? = auth.get()
@@ -26,7 +31,7 @@ class XtreamRepository(context: Context) {
     fun loginBlocking(username: String, password: String = "stalker"): Result<XtreamAccount> = runCatching {
         auth.saveMac(username, activate = false)
         token = null
-        liveLinkCache.clear()
+        clearPlaybackCache()
         val mac = stalkerMac()
         ensureSession(mac)
         syncAllBlocking(Credentials(mac, "stalker")).getOrThrow()
@@ -37,7 +42,7 @@ class XtreamRepository(context: Context) {
     fun updateMacBlocking(mac: String): Result<Unit> = runCatching {
         auth.saveMac(mac, activate = false)
         token = null
-        liveLinkCache.clear()
+        clearPlaybackCache()
         val normalized = stalkerMac()
         ensureSession(normalized)
         syncAllBlocking(Credentials(normalized, "stalker")).getOrThrow()
@@ -47,7 +52,7 @@ class XtreamRepository(context: Context) {
     fun syncAllBlocking(credentials: Credentials? = auth.get()): Result<Unit> = runCatching {
         val mac = credentials?.username ?: stalkerMac()
         token = null
-        liveLinkCache.clear()
+        clearPlaybackCache()
         val t = ensureSession(mac)
         val payloads = linkedMapOf(
             "live_categories.json" to api.liveCategories(mac, t),
@@ -89,6 +94,65 @@ class XtreamRepository(context: Context) {
 
     fun seriesEpisodesBlocking(seriesId: Int): Result<List<StreamItem>> = Result.success(emptyList())
 
+    private fun freshCachedLiveUrl(itemId: Int): String? {
+        val now = System.currentTimeMillis()
+        val cached = liveLinkCache[itemId] ?: return null
+        if (now - cached.createdAt >= liveLinkTtlMs) {
+            liveLinkCache.remove(itemId, cached)
+            return null
+        }
+        return cached.url
+    }
+
+    private fun resolveFromPortal(item: StreamItem): String {
+        val cmd = item.directSource.trim()
+        require(cmd.isNotBlank()) { "Komanda e kanalit mungon" }
+        if (cmd.startsWith("http://", true) || cmd.startsWith("https://", true)) return cmd
+
+        val mac = stalkerMac()
+        var t = ensureSession(mac)
+        return runCatching { api.createLink(mac, t, item.type, cmd) }.getOrElse {
+            token = null
+            t = ensureSession(mac)
+            api.createLink(mac, t, item.type, cmd)
+        }
+    }
+
+    private fun resolveLiveAndCache(item: StreamItem): String {
+        freshCachedLiveUrl(item.id)?.let { return it }
+        val resolved = resolveFromPortal(item)
+        liveLinkCache[item.id] = CachedLink(resolved, System.currentTimeMillis())
+        return resolved
+    }
+
+    /**
+     * Resolve the Stalker create_link in the background while the user is browsing.
+     * When OK is pressed, playbackUrls() can normally return the cached URL immediately.
+     */
+    fun prefetchPlayback(item: StreamItem) {
+        if (item.type != ContentType.LIVE) return
+        val cmd = item.directSource.trim()
+        if (cmd.isBlank() || cmd.startsWith("http://", true) || cmd.startsWith("https://", true)) return
+        if (freshCachedLiveUrl(item.id) != null) return
+
+        val state = InFlight()
+        if (liveLinkInFlight.putIfAbsent(item.id, state) != null) return
+
+        Thread {
+            try {
+                resolveLiveAndCache(item)
+            } catch (_: Throwable) {
+                // Playback will retry normally if prefetch could not resolve the link.
+            } finally {
+                state.latch.countDown()
+                liveLinkInFlight.remove(item.id, state)
+            }
+        }.apply {
+            name = "Speedline-prefetch-${item.id}"
+            isDaemon = true
+        }.start()
+    }
+
     fun playbackUrl(item: StreamItem): String = playbackUrls(item).first()
 
     fun playbackUrls(item: StreamItem): List<String> {
@@ -97,28 +161,28 @@ class XtreamRepository(context: Context) {
         if (cmd.startsWith("http://", true) || cmd.startsWith("https://", true)) return listOf(cmd)
 
         if (item.type == ContentType.LIVE) {
-            val now = System.currentTimeMillis()
-            liveLinkCache[item.id]?.takeIf { now - it.createdAt < liveLinkTtlMs }?.let {
-                return listOf(it.url)
+            freshCachedLiveUrl(item.id)?.let { return listOf(it) }
+
+            // If the list already started resolving this channel, briefly wait for that
+            // same request instead of opening a duplicate create_link request.
+            liveLinkInFlight[item.id]?.let { pending ->
+                runCatching { pending.latch.await(1200L, TimeUnit.MILLISECONDS) }
+                freshCachedLiveUrl(item.id)?.let { return listOf(it) }
             }
+
+            return listOf(resolveLiveAndCache(item))
         }
 
-        val mac = stalkerMac()
-        var t = ensureSession(mac)
-        val resolved = runCatching { api.createLink(mac, t, item.type, cmd) }.getOrElse {
-            token = null
-            t = ensureSession(mac)
-            api.createLink(mac, t, item.type, cmd)
-        }
+        return listOf(resolveFromPortal(item))
+    }
 
-        if (item.type == ContentType.LIVE) {
-            liveLinkCache[item.id] = CachedLink(resolved, System.currentTimeMillis())
-        }
-        return listOf(resolved)
+    private fun clearPlaybackCache() {
+        liveLinkCache.clear()
+        liveLinkInFlight.clear()
     }
 
     fun logout() {
-        liveLinkCache.clear()
+        clearPlaybackCache()
         auth.clear()
     }
 }
