@@ -1,0 +1,37 @@
+name: Export Speedline IPTV Source
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rebuild source snapshot
+        run: |
+          cat ci/source/part_*.b64 | tr -d '\r\n' | base64 -d > base.zip
+          unzip -q base.zip -d build-src
+          sed -i '/org.jetbrains.kotlin.android/d' build-src/SpeedlineIPTV/build.gradle.kts
+          cat ci/v015/part_*.b64 | tr -d '\r\n' | base64 -d > v015.zip
+          unzip -oq v015.zip -d build-src/SpeedlineIPTV
+          cat ci/v016/part_*.b64 | tr -d '\r\n' | base64 -d > v016.zip
+          unzip -oq v016.zip -d build-src/SpeedlineIPTV
+          cat ci/v017/part_*.b64 | tr -d '\r\n' | base64 -d > v017.zip
+          unzip -oq v017.zip -d build-src/SpeedlineIPTV
+          cp ci/v017fix/AdminScreens.kt build-src/SpeedlineIPTV/app/src/main/java/al/speedline/iptv/ui/AdminScreens.kt
+          cp ci/v017fix/BrowseScreen.kt build-src/SpeedlineIPTV/app/src/main/java/al/speedline/iptv/ui/BrowseScreen.kt
+          cat ci/v019/part_*.b64 | tr -d '\r\n' | base64 -d > v019.zip
+          unzip -oq v019.zip -d build-src/SpeedlineIPTV
+          sed -i '/org.jetbrains.kotlin.android/d' build-src/SpeedlineIPTV/app/build.gradle.kts
+          cd build-src
+          zip -qr ../SpeedlineIPTV-source-snapshot.zip SpeedlineIPTV
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SpeedlineIPTV-source-snapshot
+          path: SpeedlineIPTV-source-snapshot.zip
+# refresh for Stalker build
