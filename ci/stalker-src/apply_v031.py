@@ -69,6 +69,13 @@ for before, after in live_replacements:
 
 player.write_text(s)
 
+# Portal browse labels for the synthetic ALL category.
+browse = Path('build-src/SpeedlineIPTV/app/src/main/java/al/speedline/iptv/ui/BrowseScreen.kt')
+b = browse.read_text()
+b = b.replace('ContentType.LIVE -> "TE GJITHA"', 'ContentType.LIVE -> "Te gjitha"')
+b = b.replace('ContentType.MOVIE -> "TE GJITHË"', 'ContentType.MOVIE -> "Te gjithe"')
+browse.write_text(b)
+
 gradle = Path('build-src/SpeedlineIPTV/app/build.gradle.kts')
 g = gradle.read_text()
 g = g.replace('versionCode = 11', 'versionCode = 15')
