@@ -11,6 +11,7 @@ old = "\n".join([
 new = "\n".join([
     "        var resolvedUrls by remember(current.id, current.type, current.directSource) { mutableStateOf<List<String>?>(null) }",
     "        var resolveError by remember(current.id, current.type, current.directSource) { mutableStateOf<String?>(null) }",
+    "        val rootView = androidx.compose.ui.platform.LocalView.current",
     "",
     "        LaunchedEffect(current.id, current.type, current.directSource) {",
     "            resolvedUrls = null",
@@ -28,6 +29,15 @@ new = "\n".join([
     "",
     "        val vodUrls = resolvedUrls.orEmpty()",
     "        val url = resolvedUrls?.firstOrNull()",
+    "        LaunchedEffect(current.id, current.type, url) {",
+    "            if (current.type == ContentType.LIVE && !url.isNullOrBlank()) {",
+    "                rootView.keepScreenOn = true",
+    "                repeat(12) {",
+    "                    rootView.postInvalidateOnAnimation()",
+    "                    kotlinx.coroutines.delay(100)",
+    "                }",
+    "            }",
+    "        }",
     "        if (url == null) {",
     "            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {",
     "                Text(resolveError ?: \"Duke hapur kanalin…\", color = Color.White, fontSize = 20.sp)",
@@ -39,19 +49,32 @@ if old not in s:
 s = s.replace(old, new, 1)
 
 # Live TV: keep the display/surface awake while audio/video is playing.
-# This targets the PlayerView configuration used by Live TV only.
 if 'keepScreenOn = true' not in s:
     s = s.replace(
         'useController = false',
         'useController = false\n                keepScreenOn = true',
         1
     )
+
+# ARM32 Android TV boxes are often more stable/faster for MPEG-TS with IJK.
+# Movies remain on VLC. Replace only the simple live Exo call when present.
+live_replacements = [
+    ('ExoSurface(url = url, modifier = Modifier.fillMaxSize())', 'IjkSurface(url = url, modifier = Modifier.fillMaxSize())'),
+    ('ExoPlayerSurface(url = url, modifier = Modifier.fillMaxSize())', 'IjkSurface(url = url, modifier = Modifier.fillMaxSize())'),
+]
+for before, after in live_replacements:
+    if before in s:
+        s = s.replace(before, after, 1)
+        break
+
 player.write_text(s)
 
 gradle = Path('build-src/SpeedlineIPTV/app/build.gradle.kts')
 g = gradle.read_text()
-g = g.replace('versionCode = 11', 'versionCode = 14')
-g = g.replace('versionName = "0.2.1"', 'versionName = "0.3.2"')
+g = g.replace('versionCode = 11', 'versionCode = 15')
+g = g.replace('versionCode = 14', 'versionCode = 15')
+g = g.replace('versionName = "0.2.1"', 'versionName = "0.3.3"')
+g = g.replace('versionName = "0.3.2"', 'versionName = "0.3.3"')
 g = re.sub(r'\n\s*splits\s*\{.*?\n\s*buildFeatures\s*\{', '\n\n    buildFeatures {', g, flags=re.S)
 if 'splits {' not in g:
     split_block = '\n'.join([
