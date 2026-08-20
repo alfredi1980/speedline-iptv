@@ -114,12 +114,12 @@ jobs:
           path: build-src/SpeedlineIPTV/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
 
-  build-portal-v036:
+  build-portal-v037:
     runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
-      - name: Checkout Portal v0.3.6 source
+      - name: Checkout Portal v0.3.7 source
         uses: actions/checkout@v4
 
       - name: Set up JDK 17
@@ -148,7 +148,7 @@ jobs:
           PY
           bash /tmp/rebuild-v021.sh
 
-      - name: Apply Portal v0.3.6 source
+      - name: Apply Portal v0.3.7 source
         run: |
           ROOT=build-src/SpeedlineIPTV/app/src/main/java/al/speedline/iptv
           cp ci/stalker-src/AppConfig.kt "$ROOT/AppConfig.kt"
@@ -165,9 +165,10 @@ jobs:
 
           grep -n 'versionCode\|versionName\|splits' build-src/SpeedlineIPTV/app/build.gradle.kts
           grep -n 'TË GJITHA\|TË GJITHË' "$ROOT/ui/BrowseScreen.kt"
-          grep -n 'enableVodControls\|10_000L\|delay(8_000)' "$ROOT/ui/PlayerScreen.kt"
+          grep -n 'enableVodControls\|10_000L\|delay(3_000)' "$ROOT/ui/PlayerScreen.kt"
+          grep -n 'TextureView\|setVideoTextureView\|onRenderedFirstFrame' "$ROOT/ui/PlayerScreen.kt"
           if grep -R 'prefetchPlayback' "$ROOT"; then
-            echo 'Unexpected playback prefetch remains in v0.3.6'
+            echo 'Unexpected playback prefetch remains in v0.3.7'
             exit 1
           fi
 
@@ -182,17 +183,17 @@ jobs:
           ARM64=$(find build-src/SpeedlineIPTV/app/build/outputs/apk/debug -name '*arm64-v8a*.apk' | head -1)
           test -n "$ARM32" -a -f "$ARM32"
           test -n "$ARM64" -a -f "$ARM64"
-          cp "$ARM32" SpeedlineIPTV-Portal-v0.3.6-ARM32.apk
-          cp "$ARM64" SpeedlineIPTV-Portal-v0.3.6-ARM64.apk
-          sha256sum SpeedlineIPTV-Portal-v0.3.6-ARM32.apk SpeedlineIPTV-Portal-v0.3.6-ARM64.apk > SpeedlineIPTV-Portal-v0.3.6.sha256
-          ls -lh SpeedlineIPTV-Portal-v0.3.6-*.apk
+          cp "$ARM32" SpeedlineIPTV-Portal-v0.3.7-ARM32.apk
+          cp "$ARM64" SpeedlineIPTV-Portal-v0.3.7-ARM64.apk
+          sha256sum SpeedlineIPTV-Portal-v0.3.7-ARM32.apk SpeedlineIPTV-Portal-v0.3.7-ARM64.apk > SpeedlineIPTV-Portal-v0.3.7.sha256
+          ls -lh SpeedlineIPTV-Portal-v0.3.7-*.apk
 
-      - name: Upload Portal v0.3.6 APKs
+      - name: Upload Portal v0.3.7 APKs
         uses: actions/upload-artifact@v4
         with:
-          name: SpeedlineIPTV-Portal-v0.3.6
+          name: SpeedlineIPTV-Portal-v0.3.7
           path: |
-            SpeedlineIPTV-Portal-v0.3.6-ARM32.apk
-            SpeedlineIPTV-Portal-v0.3.6-ARM64.apk
-            SpeedlineIPTV-Portal-v0.3.6.sha256
+            SpeedlineIPTV-Portal-v0.3.7-ARM32.apk
+            SpeedlineIPTV-Portal-v0.3.7-ARM64.apk
+            SpeedlineIPTV-Portal-v0.3.7.sha256
           if-no-files-found: error

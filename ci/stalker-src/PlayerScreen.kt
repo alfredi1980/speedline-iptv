@@ -3,6 +3,7 @@ package al.speedline.iptv.ui
 import android.content.Context
 import android.view.KeyEvent
 import android.view.SurfaceHolder
+import android.view.TextureView
 import android.view.WindowManager
 import android.view.SurfaceView
 import androidx.activity.compose.BackHandler
@@ -33,7 +34,6 @@ import androidx.media3.common.Player
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
-import androidx.media3.ui.PlayerView
 import androidx.tv.material3.Text
 import org.videolan.libvlc.LibVLC
 import org.videolan.libvlc.Media
@@ -404,6 +404,8 @@ private fun ChannelListOverlay(
 private fun Media3Surface(url: String, modifier: Modifier, onFatalError: () -> Unit) {
     val context = LocalContext.current
     val latestOnFatalError by rememberUpdatedState(onFatalError)
+    var firstVideoFrameRendered by remember { mutableStateOf(false) }
+    var attachedTextureView by remember { mutableStateOf<TextureView?>(null) }
     val player = remember {
         val httpFactory = DefaultHttpDataSource.Factory()
             .setUserAgent(AppConfig.APP_USER_AGENT)
@@ -421,20 +423,28 @@ private fun Media3Surface(url: String, modifier: Modifier, onFatalError: () -> U
             override fun onPlayerError(error: PlaybackException) {
                 latestOnFatalError()
             }
+
+            override fun onRenderedFirstFrame() {
+                firstVideoFrameRendered = true
+            }
         }
         player.addListener(listener)
         onDispose {
             player.removeListener(listener)
+            attachedTextureView?.let { view ->
+                runCatching { player.clearVideoTextureView(view) }
+            }
             player.release()
         }
     }
 
     LaunchedEffect(url) {
+        firstVideoFrameRendered = false
         player.setMediaItem(MediaItem.fromUri(url))
         player.prepare()
         player.playWhenReady = true
-        delay(8_000)
-        if (player.playbackState != Player.STATE_READY && player.playbackState != Player.STATE_ENDED) {
+        delay(3_000)
+        if (!firstVideoFrameRendered && player.playbackState != Player.STATE_ENDED) {
             latestOnFatalError()
         }
     }
@@ -442,15 +452,26 @@ private fun Media3Surface(url: String, modifier: Modifier, onFatalError: () -> U
     AndroidView(
         modifier = modifier,
         factory = { ctx ->
-            PlayerView(ctx).apply {
-                useController = false
+            TextureView(ctx).apply {
                 isFocusable = false
                 keepScreenOn = true
-                resizeMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FILL
-                this.player = player
+                isOpaque = true
+                attachedTextureView = this
+                player.setVideoTextureView(this)
+                post { invalidate() }
             }
         },
-        update = { view -> view.player = player }
+        update = { view ->
+            view.keepScreenOn = true
+            if (attachedTextureView !== view) {
+                attachedTextureView?.let { oldView ->
+                    runCatching { player.clearVideoTextureView(oldView) }
+                }
+                attachedTextureView = view
+                player.setVideoTextureView(view)
+            }
+            view.invalidate()
+        }
     )
 }
 
