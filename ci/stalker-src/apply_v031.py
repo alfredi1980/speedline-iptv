@@ -36,12 +36,22 @@ new = "\n".join([
 ])
 if old not in s:
     raise RuntimeError('Expected PlayerScreen playback block not found')
-player.write_text(s.replace(old, new, 1))
+s = s.replace(old, new, 1)
+
+# Live TV: keep the display/surface awake while audio/video is playing.
+# This targets the PlayerView configuration used by Live TV only.
+if 'keepScreenOn = true' not in s:
+    s = s.replace(
+        'useController = false',
+        'useController = false\n                keepScreenOn = true',
+        1
+    )
+player.write_text(s)
 
 gradle = Path('build-src/SpeedlineIPTV/app/build.gradle.kts')
 g = gradle.read_text()
-g = g.replace('versionCode = 11', 'versionCode = 13')
-g = g.replace('versionName = "0.2.1"', 'versionName = "0.3.1"')
+g = g.replace('versionCode = 11', 'versionCode = 14')
+g = g.replace('versionName = "0.2.1"', 'versionName = "0.3.2"')
 g = re.sub(r'\n\s*splits\s*\{.*?\n\s*buildFeatures\s*\{', '\n\n    buildFeatures {', g, flags=re.S)
 if 'splits {' not in g:
     split_block = '\n'.join([
