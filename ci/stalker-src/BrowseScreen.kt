@@ -14,6 +14,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.text.font.FontWeight
@@ -40,21 +41,25 @@ fun BrowseScreen(
 ) {
     val favorites = remember { FavoritesStore(context) }
     var favoriteRevision by remember { mutableIntStateOf(0) }
-    val categories = remember(type, dataRevision) { repository.categories(type) }
-    val allId = "__ALL__"
-    val allLabel = when (type) {
-        ContentType.LIVE -> "TE GJITHA"
-        ContentType.MOVIE -> "TE GJITHË"
-        ContentType.SERIES -> "TË GJITHA"
+
+    val categories = remember(type, dataRevision) {
+        repository.categories(type).filterNot { category ->
+            val label = category.name.trim().uppercase()
+            label == "ALL" ||
+                label == "TE GJITHA" ||
+                label == "TE GJITHË" ||
+                label == "TË GJITHA" ||
+                label == "TË GJITHË"
+        }
     }
 
-    var selectedCategory by remember(type, dataRevision) { mutableStateOf(allId) }
+    var selectedCategory by remember(type, dataRevision) {
+        mutableStateOf(categories.firstOrNull()?.id)
+    }
+
     var streams by remember(type, selectedCategory, favoritesOnly, favoriteRevision, dataRevision) {
         mutableStateOf(
-            repository.streams(
-                type,
-                if (favoritesOnly || selectedCategory == allId) null else selectedCategory
-            ).let {
+            repository.streams(type, if (favoritesOnly) null else selectedCategory).let {
                 if (favoritesOnly) favorites.filter(it) else it
             }
         )
@@ -63,19 +68,27 @@ fun BrowseScreen(
     var zeroTapCount by remember { mutableIntStateOf(0) }
     var lastZeroTap by remember { mutableLongStateOf(0L) }
     var focusStreamsAfterCategory by remember { mutableStateOf(false) }
+    var initialFocusDone by remember(type, dataRevision) { mutableStateOf(false) }
     val firstStreamRequester = remember { FocusRequester() }
 
     fun selectCategory(id: String) {
         selectedCategory = id
-        streams = repository.streams(type, if (id == allId) null else id)
+        streams = repository.streams(type, id)
         focusStreamsAfterCategory = true
     }
 
-    LaunchedEffect(streams, focusStreamsAfterCategory) {
-        if (focusStreamsAfterCategory && streams.isNotEmpty()) {
-            delay(80)
+    LaunchedEffect(streams) {
+        if (type == ContentType.LIVE) {
+            streams.take(2).forEach { repository.prefetchPlayback(it) }
+        }
+    }
+
+    LaunchedEffect(streams, focusStreamsAfterCategory, initialFocusDone) {
+        if (streams.isNotEmpty() && (focusStreamsAfterCategory || !initialFocusDone)) {
+            delay(if (focusStreamsAfterCategory) 70 else 140)
             runCatching { firstStreamRequester.requestFocus() }
             focusStreamsAfterCategory = false
+            initialFocusDone = true
         }
     }
 
@@ -92,16 +105,16 @@ fun BrowseScreen(
         ContentType.SERIES -> "seriale"
     }
 
-    val panel = Color(0xAA071C3A)
-    val card = Color(0xB8254772)
-    val cyan = Color(0xFF29B6F6)
-    val liveCard = Color(0xFF23C552)
-    val liveFocusedCard = Color(0xFF39E86B)
-    val listBackground = if (type == ContentType.LIVE) Color(0xCC0A2644) else Color(0x99051632)
+    val cyan = Color(0xFF35DDF4)
+    val sidePanel = Color(0xD0121922)
+    val listPanel = Color(0xDF111820)
+    val categoryCard = Color(0xA926313F)
+    val categorySelected = Color(0xD51A6FB2)
 
     Row(
         Modifier
             .fillMaxSize()
+            .background(Color(0xB2070E16))
             .onPreviewKeyEvent { event ->
                 if (event.nativeKeyEvent.action == KeyEvent.ACTION_DOWN &&
                     (event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_0 || event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_NUMPAD_0)
@@ -116,127 +129,171 @@ fun BrowseScreen(
                     } else false
                 } else false
             }
-            .padding(horizontal = 32.dp, vertical = 24.dp),
-        horizontalArrangement = Arrangement.spacedBy(22.dp)
+            .padding(horizontal = 24.dp, vertical = 18.dp),
+        horizontalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         Column(
             Modifier
-                .width(270.dp)
+                .width(235.dp)
                 .fillMaxHeight()
-                .background(panel, RoundedCornerShape(20.dp))
-                .border(1.dp, Color(0x5534A9FF), RoundedCornerShape(20.dp))
-                .padding(18.dp)
+                .background(sidePanel, RoundedCornerShape(14.dp))
+                .border(1.dp, Color(0x5535DDF4), RoundedCornerShape(14.dp))
+                .padding(14.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("SPEED", fontSize = 27.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                Text("LINE", fontSize = 27.sp, fontWeight = FontWeight.Bold, color = cyan)
+                Text("SPEED", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                Text("LINE", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = cyan)
             }
-            Text("I P T V", fontSize = 14.sp, color = Color.White.copy(alpha = 0.86f))
-            Spacer(Modifier.height(22.dp))
-            Text(title, fontSize = 24.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
-            Spacer(Modifier.height(14.dp))
+            Text("I P T V", fontSize = 12.sp, color = Color.White.copy(alpha = 0.72f))
+            Spacer(Modifier.height(18.dp))
+            Text(title, fontSize = 20.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+            Spacer(Modifier.height(10.dp))
 
             if (!favoritesOnly) {
                 LazyColumn(
-                    verticalArrangement = Arrangement.spacedBy(7.dp),
+                    verticalArrangement = Arrangement.spacedBy(5.dp),
                     modifier = Modifier.weight(1f)
                 ) {
-                    item {
-                        val selected = selectedCategory == allId
-                        Button(
-                            onClick = { selectCategory(allId) },
-                            modifier = Modifier.fillMaxWidth().height(48.dp),
-                            colors = ButtonDefaults.colors(
-                                containerColor = if (selected) Color(0xCC147CE5) else card,
-                                focusedContainerColor = Color(0xFF168BE0)
-                            )
-                        ) { Text(allLabel, maxLines = 1, fontSize = 15.sp, fontWeight = FontWeight.SemiBold) }
-                    }
-
-                    itemsIndexed(categories) { _, cat ->
+                    itemsIndexed(categories, key = { _, cat -> cat.id }) { _, cat ->
                         val selected = cat.id == selectedCategory
                         Button(
                             onClick = { selectCategory(cat.id) },
-                            modifier = Modifier.fillMaxWidth().height(48.dp),
+                            modifier = Modifier.fillMaxWidth().height(42.dp),
                             colors = ButtonDefaults.colors(
-                                containerColor = if (selected) Color(0xCC147CE5) else card,
-                                focusedContainerColor = Color(0xFF168BE0)
+                                containerColor = if (selected) categorySelected else categoryCard,
+                                focusedContainerColor = Color(0xFF207FC3)
                             )
-                        ) { Text(cat.name, maxLines = 1, fontSize = 15.sp) }
+                        ) {
+                            Text(cat.name, maxLines = 1, fontSize = 14.sp, color = Color.White)
+                        }
                     }
                 }
+
                 if (type == ContentType.LIVE) {
-                    Spacer(Modifier.height(10.dp))
+                    Spacer(Modifier.height(8.dp))
                     Button(
                         onClick = onMovies,
-                        modifier = Modifier.fillMaxWidth().height(48.dp),
-                        colors = ButtonDefaults.colors(containerColor = card, focusedContainerColor = Color(0xFF168BE0))
-                    ) { Text("FILMA", fontSize = 15.sp, fontWeight = FontWeight.SemiBold) }
+                        modifier = Modifier.fillMaxWidth().height(42.dp),
+                        colors = ButtonDefaults.colors(
+                            containerColor = categoryCard,
+                            focusedContainerColor = Color(0xFF207FC3)
+                        )
+                    ) {
+                        Text("FILMA", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                    }
                 }
             } else {
                 Spacer(Modifier.weight(1f))
             }
 
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(8.dp))
             Button(
                 onClick = onBack,
-                modifier = Modifier.fillMaxWidth().height(44.dp),
-                colors = ButtonDefaults.colors(containerColor = Color(0x80445A78), focusedContainerColor = Color(0xFF168BE0))
-            ) { Text("← BACK", fontSize = 14.sp) }
+                modifier = Modifier.fillMaxWidth().height(40.dp),
+                colors = ButtonDefaults.colors(
+                    containerColor = Color(0x80303B49),
+                    focusedContainerColor = Color(0xFF207FC3)
+                )
+            ) {
+                Text("← BACK", fontSize = 13.sp)
+            }
         }
 
         Column(
             Modifier
                 .weight(1f)
                 .fillMaxHeight()
-                .background(listBackground, RoundedCornerShape(20.dp))
-                .border(1.dp, Color(0x6634A9FF), RoundedCornerShape(20.dp))
-                .padding(18.dp)
+                .background(listPanel, RoundedCornerShape(14.dp))
+                .border(1.dp, Color(0x6635DDF4), RoundedCornerShape(14.dp))
+                .padding(horizontal = 14.dp, vertical = 12.dp)
         ) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text(title, fontSize = 24.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
-                Text("${streams.size} $itemLabel", fontSize = 17.sp, color = cyan)
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 6.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(title, fontSize = 20.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+                Text("${streams.size} $itemLabel", fontSize = 14.sp, color = cyan)
             }
-            Spacer(Modifier.height(12.dp))
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+
+            Spacer(Modifier.height(8.dp))
+
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 itemsIndexed(streams, key = { _, item -> "${item.type}-${item.id}" }) { index, item ->
                     val fav = favorites.isFavorite(item)
-                    val numberPrefix = if (item.type == ContentType.LIVE) {
-                        "${item.channelNumber ?: (index + 1)}   "
-                    } else ""
-                    val itemModifier = if (index == 0) {
-                        Modifier.fillMaxWidth().height(if (type == ContentType.LIVE) 50.dp else 46.dp).focusRequester(firstStreamRequester)
-                    } else {
-                        Modifier.fillMaxWidth().height(if (type == ContentType.LIVE) 50.dp else 46.dp)
-                    }
-                    Button(
-                        onClick = {
-                            if (item.type == ContentType.SERIES) onSeries(item) else onPlay(streams, index)
-                        },
-                        onLongClick = {
-                            favorites.toggle(item)
-                            favoriteRevision++
-                        },
-                        modifier = itemModifier,
-                        colors = ButtonDefaults.colors(
-                            containerColor = if (type == ContentType.LIVE) liveCard else card,
-                            focusedContainerColor = if (type == ContentType.LIVE) liveFocusedCard else Color(0xFF147CE5)
-                        )
+                    var rowFocused by remember(item.id, item.type) { mutableStateOf(false) }
+                    val rowShape = RoundedCornerShape(9.dp)
+                    val rowHeight = if (type == ContentType.LIVE) 48.dp else 46.dp
+
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .height(rowHeight)
+                            .background(
+                                if (rowFocused) Color(0xD52A3440) else Color.Transparent,
+                                rowShape
+                            )
+                            .border(
+                                width = if (rowFocused) 2.dp else 1.dp,
+                                color = if (rowFocused) cyan else Color(0x2235DDF4),
+                                shape = rowShape
+                            )
                     ) {
-                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                numberPrefix,
-                                fontSize = if (type == ContentType.LIVE) 17.sp else 14.sp,
-                                color = if (type == ContentType.LIVE) Color(0xFF062A14) else cyan,
-                                fontWeight = FontWeight.Bold
+                        val buttonModifier = Modifier
+                            .fillMaxSize()
+                            .then(if (index == 0) Modifier.focusRequester(firstStreamRequester) else Modifier)
+                            .onFocusChanged { state ->
+                                rowFocused = state.isFocused
+                                if (state.isFocused && item.type == ContentType.LIVE) {
+                                    repository.prefetchPlayback(item)
+                                    streams.getOrNull(index + 1)?.let { repository.prefetchPlayback(it) }
+                                }
+                            }
+
+                        Button(
+                            onClick = {
+                                if (item.type == ContentType.SERIES) onSeries(item) else onPlay(streams, index)
+                            },
+                            onLongClick = {
+                                favorites.toggle(item)
+                                favoriteRevision++
+                            },
+                            modifier = buttonModifier,
+                            colors = ButtonDefaults.colors(
+                                containerColor = Color.Transparent,
+                                focusedContainerColor = Color.Transparent
                             )
-                            Text(
-                                "${if (fav) "★ " else ""}${item.name}",
-                                maxLines = 1,
-                                fontSize = if (type == ContentType.LIVE) 18.sp else 15.sp,
-                                fontWeight = if (type == ContentType.LIVE) FontWeight.SemiBold else FontWeight.Normal,
-                                color = if (type == ContentType.LIVE) Color(0xFF03150A) else Color.White
-                            )
+                        ) {
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                if (item.type == ContentType.LIVE) {
+                                    Text(
+                                        text = "${item.channelNumber ?: (index + 1)}",
+                                        modifier = Modifier.width(50.dp),
+                                        fontSize = 16.sp,
+                                        color = cyan,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+
+                                Text(
+                                    text = "${if (fav) "★  " else ""}${item.name}",
+                                    modifier = Modifier.weight(1f),
+                                    maxLines = 1,
+                                    fontSize = if (type == ContentType.LIVE) 17.sp else 16.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = Color.White
+                                )
+
+                                Text(
+                                    text = "›",
+                                    fontSize = 28.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = if (rowFocused) cyan else Color.White.copy(alpha = 0.82f)
+                                )
+                            }
                         }
                     }
                 }
