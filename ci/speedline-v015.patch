@@ -1,0 +1,513 @@
+diff -ruN SpeedlineIPTV-v014-base/SpeedlineIPTV/app/build.gradle.kts SpeedlineIPTV-v015-work/SpeedlineIPTV/app/build.gradle.kts
+--- SpeedlineIPTV-v014-base/SpeedlineIPTV/app/build.gradle.kts	2026-08-19 11:54:11.712307419 +0000
++++ SpeedlineIPTV-v015-work/SpeedlineIPTV/app/build.gradle.kts	2026-08-19 12:16:13.260739147 +0000
+@@ -11,8 +11,8 @@
+         applicationId = "al.speedline.iptv"
+         minSdk = 23
+         targetSdk = 36
+-        versionCode = 2
+-        versionName = "0.1.1"
++        versionCode = 5
++        versionName = "0.1.5"
+     }
+ 
+     buildFeatures {
+diff -ruN SpeedlineIPTV-v014-base/SpeedlineIPTV/app/src/main/java/al/speedline/iptv/MainActivity.kt SpeedlineIPTV-v015-work/SpeedlineIPTV/app/src/main/java/al/speedline/iptv/MainActivity.kt
+--- SpeedlineIPTV-v014-base/SpeedlineIPTV/app/src/main/java/al/speedline/iptv/MainActivity.kt	2026-08-19 10:22:55.000000000 +0000
++++ SpeedlineIPTV-v015-work/SpeedlineIPTV/app/src/main/java/al/speedline/iptv/MainActivity.kt	2026-08-19 12:16:13.260894759 +0000
+@@ -6,6 +6,12 @@
+ import androidx.activity.ComponentActivity
+ import androidx.activity.compose.setContent
+ import androidx.compose.runtime.*
++import androidx.compose.foundation.background
++import androidx.compose.foundation.layout.Box
++import androidx.compose.foundation.layout.fillMaxSize
++import androidx.compose.ui.Modifier
++import androidx.compose.ui.graphics.Color
++import androidx.tv.material3.MaterialTheme
+ import al.speedline.iptv.data.*
+ import al.speedline.iptv.ui.*
+ import java.text.SimpleDateFormat
+@@ -27,15 +33,19 @@
+ 
+         setContent {
+             SpeedlineTheme {
+-                var screen by remember { mutableStateOf<Screen>(if (repo.credentials() == null) Screen.Login else Screen.Home) }
++                var screen by remember { mutableStateOf<Screen>(if (repo.credentials() == null) Screen.Login else Screen.Browse(ContentType.LIVE)) }
+                 var loginBusy by remember { mutableStateOf(false) }
+                 var loginError by remember { mutableStateOf<String?>(null) }
+                 var refreshing by remember { mutableStateOf(false) }
++                var dataRevision by remember { mutableIntStateOf(0) }
+ 
+                 fun refreshNow() {
+                     if (repo.credentials() == null || refreshing) return
+                     refreshing = true
+-                    repo.syncAsync { refreshing = false }
++                    repo.syncAsync { result ->
++                        refreshing = false
++                        if (result.isSuccess) dataRevision++
++                    }
+                 }
+ 
+                 LaunchedEffect(Unit) {
+@@ -63,6 +73,7 @@
+                     else -> "Updated ${SimpleDateFormat("dd/MM HH:mm", Locale.getDefault()).format(Date(lastSync))}"
+                 }
+ 
++                Box(Modifier.fillMaxSize().background(Color(0xFF5AA9E6).copy(alpha = 0.50f))) {
+                 when (val s = screen) {
+                     Screen.Login -> LoginScreen(loginBusy, loginError) { u, p ->
+                         loginBusy = true
+@@ -71,7 +82,7 @@
+                             val result = repo.loginBlocking(u, p)
+                             runOnUiThread {
+                                 loginBusy = false
+-                                result.onSuccess { screen = Screen.Home }
++                                result.onSuccess { dataRevision++; screen = Screen.Browse(ContentType.LIVE) }
+                                     .onFailure { loginError = it.message ?: "Login failed" }
+                             }
+                         }.start()
+@@ -85,10 +96,11 @@
+                     )
+ 
+                     is Screen.Browse -> BrowseScreen(
+-                        context = this,
++                        context = this@MainActivity,
+                         repository = repo,
+                         type = s.type,
+                         favoritesOnly = s.favorites,
++                        dataRevision = dataRevision,
+                         onPlay = { list, idx -> screen = Screen.Player(list, idx, s) },
+                         onSeries = { series ->
+                             Thread {
+@@ -109,7 +121,7 @@
+                     )
+ 
+                     is Screen.Player -> PlayerScreen(
+-                        context = this,
++                        context = this@MainActivity,
+                         repository = repo,
+                         playlist = s.playlist,
+                         startIndex = s.index,
+@@ -117,13 +129,14 @@
+                     )
+ 
+                     Screen.Settings -> SettingsScreen(
+-                        context = this,
++                        context = this@MainActivity,
+                         refreshing = refreshing,
+                         onRefresh = { refreshNow() },
+                         onLogout = { repo.logout(); screen = Screen.Login },
+                         onBack = { screen = Screen.Home }
+                     )
+                 }
++                }
+             }
+         }
+     }
+diff -ruN SpeedlineIPTV-v014-base/SpeedlineIPTV/app/src/main/java/al/speedline/iptv/data/Models.kt SpeedlineIPTV-v015-work/SpeedlineIPTV/app/src/main/java/al/speedline/iptv/data/Models.kt
+--- SpeedlineIPTV-v014-base/SpeedlineIPTV/app/src/main/java/al/speedline/iptv/data/Models.kt	2026-08-19 10:22:55.000000000 +0000
++++ SpeedlineIPTV-v015-work/SpeedlineIPTV/app/src/main/java/al/speedline/iptv/data/Models.kt	2026-08-19 11:53:49.358194057 +0000
+@@ -22,7 +22,8 @@
+     val type: ContentType,
+     val icon: String = "",
+     val containerExtension: String = "",
+-    val plot: String = ""
++    val plot: String = "",
++    val channelNumber: Int? = null
+ )
+ 
+ object XtreamParsers {
+@@ -100,7 +101,8 @@
+                         type = type,
+                         icon = icon,
+                         containerExtension = o.optString("container_extension", ""),
+-                        plot = o.optString("plot", "")
++                        plot = o.optString("plot", ""),
++                        channelNumber = if (type == ContentType.LIVE) o.optInt("num", 0).takeIf { it > 0 } else null
+                     )
+                 )
+             }
+diff -ruN SpeedlineIPTV-v014-base/SpeedlineIPTV/app/src/main/java/al/speedline/iptv/ui/BrowseScreen.kt SpeedlineIPTV-v015-work/SpeedlineIPTV/app/src/main/java/al/speedline/iptv/ui/BrowseScreen.kt
+--- SpeedlineIPTV-v014-base/SpeedlineIPTV/app/src/main/java/al/speedline/iptv/ui/BrowseScreen.kt	2026-08-19 10:22:55.000000000 +0000
++++ SpeedlineIPTV-v015-work/SpeedlineIPTV/app/src/main/java/al/speedline/iptv/ui/BrowseScreen.kt	2026-08-19 12:16:13.260956791 +0000
+@@ -18,15 +18,16 @@
+     repository: XtreamRepository,
+     type: ContentType,
+     favoritesOnly: Boolean = false,
++    dataRevision: Int = 0,
+     onPlay: (List<StreamItem>, Int) -> Unit,
+     onSeries: (StreamItem) -> Unit,
+     onBack: () -> Unit
+ ) {
+     val favorites = remember { FavoritesStore(context) }
+     var favoriteRevision by remember { mutableIntStateOf(0) }
+-    val categories = remember(type) { repository.categories(type) }
+-    var selectedCategory by remember(type) { mutableStateOf(categories.firstOrNull()?.id) }
+-    var streams by remember(type, selectedCategory, favoritesOnly, favoriteRevision) {
++    val categories = remember(type, dataRevision) { repository.categories(type) }
++    var selectedCategory by remember(type, dataRevision) { mutableStateOf(categories.firstOrNull()?.id) }
++    var streams by remember(type, selectedCategory, favoritesOnly, favoriteRevision, dataRevision) {
+         mutableStateOf(
+             repository.streams(type, if (favoritesOnly) null else selectedCategory).let {
+                 if (favoritesOnly) favorites.filter(it) else it
+@@ -39,9 +40,16 @@
+         streams = repository.streams(type, id)
+     }
+ 
++    val title = when {
++        favoritesOnly -> "FAVORITES"
++        type == ContentType.LIVE -> "KANALET"
++        else -> type.name
++    }
++    val itemLabel = if (type == ContentType.LIVE) "kanale" else "artikuj"
++
+     Row(Modifier.fillMaxSize().padding(28.dp), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+         Column(Modifier.width(300.dp)) {
+-            Text(if (favoritesOnly) "FAVORITES" else type.name, fontSize = 28.sp)
++            Text(title, fontSize = 28.sp)
+             Spacer(Modifier.height(16.dp))
+             Button(onClick = onBack, modifier = Modifier.fillMaxWidth()) { Text("← BACK") }
+             if (!favoritesOnly) {
+@@ -57,11 +65,14 @@
+         }
+ 
+         Column(Modifier.weight(1f)) {
+-            Text("${streams.size} artikuj • mbaj OK për Favorite", fontSize = 22.sp)
++            Text("${streams.size} $itemLabel", fontSize = 22.sp)
+             Spacer(Modifier.height(12.dp))
+             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                 itemsIndexed(streams, key = { _, item -> "${item.type}-${item.id}" }) { index, item ->
+                     val fav = favorites.isFavorite(item)
++                    val numberPrefix = if (item.type == ContentType.LIVE) {
++                        "${item.channelNumber ?: (index + 1)}. "
++                    } else ""
+                     Button(
+                         onClick = {
+                             if (item.type == ContentType.SERIES) onSeries(item) else onPlay(streams, index)
+@@ -72,7 +83,7 @@
+                         },
+                         modifier = Modifier.fillMaxWidth().heightIn(min = 58.dp)
+                     ) {
+-                        Text("${if (fav) "★ " else ""}${item.name}", maxLines = 1)
++                        Text("${if (fav) "★ " else ""}$numberPrefix${item.name}", maxLines = 1)
+                     }
+                 }
+             }
+diff -ruN SpeedlineIPTV-v014-base/SpeedlineIPTV/app/src/main/java/al/speedline/iptv/ui/HomeScreen.kt SpeedlineIPTV-v015-work/SpeedlineIPTV/app/src/main/java/al/speedline/iptv/ui/HomeScreen.kt
+--- SpeedlineIPTV-v014-base/SpeedlineIPTV/app/src/main/java/al/speedline/iptv/ui/HomeScreen.kt	2026-08-19 10:21:29.000000000 +0000
++++ SpeedlineIPTV-v015-work/SpeedlineIPTV/app/src/main/java/al/speedline/iptv/ui/HomeScreen.kt	2026-08-19 11:53:49.357907324 +0000
+@@ -27,7 +27,7 @@
+             Text(syncLabel)
+         }
+         Row(horizontalArrangement = Arrangement.spacedBy(22.dp)) {
+-            HomeButton("LIVE TV") { onBrowse(ContentType.LIVE) }
++            HomeButton("KANALET") { onBrowse(ContentType.LIVE) }
+             HomeButton("MOVIES") { onBrowse(ContentType.MOVIE) }
+             HomeButton("SERIES") { onBrowse(ContentType.SERIES) }
+             HomeButton("FAVORITES", onFavorites)
+diff -ruN SpeedlineIPTV-v014-base/SpeedlineIPTV/app/src/main/java/al/speedline/iptv/ui/PlayerScreen.kt SpeedlineIPTV-v015-work/SpeedlineIPTV/app/src/main/java/al/speedline/iptv/ui/PlayerScreen.kt
+--- SpeedlineIPTV-v014-base/SpeedlineIPTV/app/src/main/java/al/speedline/iptv/ui/PlayerScreen.kt	2026-08-19 10:22:55.000000000 +0000
++++ SpeedlineIPTV-v015-work/SpeedlineIPTV/app/src/main/java/al/speedline/iptv/ui/PlayerScreen.kt	2026-08-19 12:16:13.263543126 +0000
+@@ -7,9 +7,12 @@
+ import androidx.activity.compose.BackHandler
+ import androidx.compose.foundation.background
+ import androidx.compose.foundation.focusable
+-import androidx.compose.foundation.layout.fillMaxSize
++import androidx.compose.foundation.layout.*
++import androidx.compose.foundation.lazy.LazyColumn
++import androidx.compose.foundation.lazy.itemsIndexed
++import androidx.compose.foundation.lazy.rememberLazyListState
+ import androidx.compose.runtime.*
++import androidx.compose.ui.Alignment
+ import androidx.compose.ui.Modifier
+ import androidx.compose.ui.focus.FocusRequester
+ import androidx.compose.ui.focus.focusRequester
+@@ -17,13 +20,18 @@
+ import androidx.compose.ui.input.key.onPreviewKeyEvent
+ import androidx.compose.ui.platform.LocalContext
++import androidx.compose.ui.text.font.FontWeight
++import androidx.compose.ui.unit.dp
++import androidx.compose.ui.unit.sp
+ import androidx.compose.ui.viewinterop.AndroidView
+ import androidx.media3.common.MediaItem
+ import androidx.media3.common.PlaybackException
+ import androidx.media3.common.Player
+@@ -37,6 +45,7 @@
+ import al.speedline.iptv.data.XtreamRepository
+ import al.speedline.iptv.player.IjkReflectionPlayer
++import kotlinx.coroutines.delay
+ 
+ @Composable
+ fun PlayerScreen(
+@@ -51,6 +60,10 @@
+     var index by remember {
+         mutableIntStateOf(startIndex.coerceIn(0, (playlist.size - 1).coerceAtLeast(0)))
+     }
++    var showChannelList by remember { mutableStateOf(false) }
++    var listIndex by remember { mutableIntStateOf(index) }
++    var numericEntry by remember { mutableStateOf("") }
++    var numericRevision by remember { mutableIntStateOf(0) }
++    val listState = rememberLazyListState()
+     val settings = remember { PlayerSettingsStore(context) }
+     val requestedMode = remember { settings.getMode() }
+     var useIjk by remember {
+@@ -60,19 +73,79 @@
+     val current = playlist.getOrNull(index) ?: return
+     val focusRequester = remember { FocusRequester() }
+ 
+-    BackHandler(onBack = onBack)
++    fun resetAutoPlayer() {
++        if (requestedMode == PlayerMode.AUTO) useIjk = false
++    }
++
++    fun channelNumberAt(itemIndex: Int): Int =
++        playlist[itemIndex].channelNumber ?: (itemIndex + 1)
++
++    fun tuneChannelNumber(number: Int) {
++        val target = playlist.indices.firstOrNull { channelNumberAt(it) == number } ?: return
++        index = target
++        listIndex = target
++        showChannelList = false
++        resetAutoPlayer()
++    }
++
++    fun commitNumericEntry() {
++        val number = numericEntry.toIntOrNull()
++        numericEntry = ""
++        if (number != null) tuneChannelNumber(number)
++    }
++
++    fun appendDigit(digit: Int) {
++        if (current.type != ContentType.LIVE) return
++        numericEntry = if (numericEntry.length >= 4) digit.toString() else numericEntry + digit.toString()
++        numericRevision++
++    }
++
++    BackHandler {
++        when {
++            numericEntry.isNotBlank() -> numericEntry = ""
++            showChannelList -> showChannelList = false
++            else -> onBack()
++        }
++    }
+ 
+     fun zap(delta: Int) {
+         if (playlist.isEmpty()) return
++        numericEntry = ""
+         index = (index + delta + playlist.size) % playlist.size
+-        // AUTO always gives Media3 the first attempt on each new channel.
+-        if (requestedMode == PlayerMode.AUTO) useIjk = false
++        listIndex = index
++        resetAutoPlayer()
++    }
++
++    fun moveList(delta: Int) {
++        if (playlist.isEmpty()) return
++        listIndex = (listIndex + delta + playlist.size) % playlist.size
++    }
++
++    fun tuneSelectedChannel() {
++        if (playlist.isEmpty()) return
++        index = listIndex.coerceIn(0, playlist.lastIndex)
++        showChannelList = false
++        resetAutoPlayer()
+     }
+ 
+     LaunchedEffect(Unit) {
+         runCatching { focusRequester.requestFocus() }
+     }
+ 
++    LaunchedEffect(showChannelList, listIndex) {
++        if (showChannelList && playlist.isNotEmpty()) {
++            runCatching { listState.scrollToItem(listIndex.coerceIn(0, playlist.lastIndex)) }
++        }
++    }
++
++    LaunchedEffect(numericRevision) {
++        if (numericEntry.isNotBlank()) {
++            val snapshot = numericEntry
++            delay(1_200)
++            if (numericEntry == snapshot) commitNumericEntry()
++        }
++    }
++
+     Box(
+         Modifier
+             .fillMaxSize()
+@@ -83,21 +156,60 @@
+                 if (event.nativeKeyEvent.action != KeyEvent.ACTION_DOWN) {
+                     return@onPreviewKeyEvent false
+                 }
+-                when (event.nativeKeyEvent.keyCode) {
+-                    KeyEvent.KEYCODE_CHANNEL_UP,
++
++                val keyCode = event.nativeKeyEvent.keyCode
++                remoteDigit(keyCode)?.let { digit ->
++                    if (current.type == ContentType.LIVE) {
++                        if (event.nativeKeyEvent.repeatCount == 0) appendDigit(digit)
++                        return@onPreviewKeyEvent true
++                    }
++                }
++
++                when (keyCode) {
++                    KeyEvent.KEYCODE_CHANNEL_UP -> {
++                        if (showChannelList) moveList(-1) else zap(+1)
++                        true
++                    }
++
++                    KeyEvent.KEYCODE_CHANNEL_DOWN -> {
++                        if (showChannelList) moveList(+1) else zap(-1)
++                        true
++                    }
++
+                     KeyEvent.KEYCODE_DPAD_UP -> {
+-                        zap(+1)
++                        if (showChannelList) moveList(-1) else zap(+1)
+                         true
+                     }
+ 
+-                    KeyEvent.KEYCODE_CHANNEL_DOWN,
+                     KeyEvent.KEYCODE_DPAD_DOWN -> {
+-                        zap(-1)
++                        if (showChannelList) moveList(+1) else zap(-1)
+                         true
+                     }
+ 
++                    KeyEvent.KEYCODE_DPAD_CENTER,
++                    KeyEvent.KEYCODE_ENTER,
++                    KeyEvent.KEYCODE_NUMPAD_ENTER -> {
++                        if (current.type == ContentType.LIVE) {
++                            if (numericEntry.isNotBlank()) {
++                                commitNumericEntry()
++                            } else if (showChannelList) {
++                                tuneSelectedChannel()
++                            } else {
++                                listIndex = index
++                                showChannelList = true
++                            }
++                            true
++                        } else {
++                            false
++                        }
++                    }
++
+                     KeyEvent.KEYCODE_BACK -> {
+-                        onBack()
++                        when {
++                            numericEntry.isNotBlank() -> numericEntry = ""
++                            showChannelList -> showChannelList = false
++                            else -> onBack()
++                        }
+                         true
+                     }
+ 
+@@ -119,6 +231,81 @@
+                 }
+             )
+         }
++
++        if (showChannelList && current.type == ContentType.LIVE) {
++            ChannelListOverlay(
++                playlist = playlist,
++                selectedIndex = listIndex,
++                listState = listState
++            )
++        }
++
++        if (numericEntry.isNotBlank() && current.type == ContentType.LIVE) {
++            Box(
++                Modifier
++                    .align(Alignment.TopEnd)
++                    .padding(28.dp)
++                    .background(Color(0xFF5AA9E6).copy(alpha = 0.82f))
++                    .padding(horizontal = 20.dp, vertical = 10.dp)
++            ) {
++                Text(numericEntry, fontSize = 30.sp, fontWeight = FontWeight.Bold)
++            }
++        }
++    }
++}
++
++private fun remoteDigit(keyCode: Int): Int? = when (keyCode) {
++    KeyEvent.KEYCODE_0, KeyEvent.KEYCODE_NUMPAD_0 -> 0
++    KeyEvent.KEYCODE_1, KeyEvent.KEYCODE_NUMPAD_1 -> 1
++    KeyEvent.KEYCODE_2, KeyEvent.KEYCODE_NUMPAD_2 -> 2
++    KeyEvent.KEYCODE_3, KeyEvent.KEYCODE_NUMPAD_3 -> 3
++    KeyEvent.KEYCODE_4, KeyEvent.KEYCODE_NUMPAD_4 -> 4
++    KeyEvent.KEYCODE_5, KeyEvent.KEYCODE_NUMPAD_5 -> 5
++    KeyEvent.KEYCODE_6, KeyEvent.KEYCODE_NUMPAD_6 -> 6
++    KeyEvent.KEYCODE_7, KeyEvent.KEYCODE_NUMPAD_7 -> 7
++    KeyEvent.KEYCODE_8, KeyEvent.KEYCODE_NUMPAD_8 -> 8
++    KeyEvent.KEYCODE_9, KeyEvent.KEYCODE_NUMPAD_9 -> 9
++    else -> null
++}
++
++@Composable
++private fun ChannelListOverlay(
++    playlist: List<StreamItem>,
++    selectedIndex: Int,
++    listState: androidx.compose.foundation.lazy.LazyListState
++) {
++    Column(
++        Modifier
++            .fillMaxHeight()
++            .width(365.dp)
++            .background(Color(0xFF5AA9E6).copy(alpha = 0.50f))
++            .padding(horizontal = 16.dp, vertical = 15.dp)
++    ) {
++        Text("KANALET", fontSize = 22.sp, fontWeight = FontWeight.Bold)
++        Spacer(Modifier.height(10.dp))
++        LazyColumn(
++            state = listState,
++            verticalArrangement = Arrangement.spacedBy(4.dp),
++            modifier = Modifier.fillMaxSize()
++        ) {
++            itemsIndexed(playlist, key = { _, item -> "player-${item.id}" }) { itemIndex, item ->
++                val selected = itemIndex == selectedIndex
++                val number = item.channelNumber ?: (itemIndex + 1)
++                Box(
++                    Modifier
++                        .fillMaxWidth()
++                        .background(if (selected) Color(0xFF8BCBFF).copy(alpha = 0.88f) else Color.Transparent)
++                        .padding(horizontal = 10.dp, vertical = 8.dp)
++                ) {
++                    Text(
++                        text = "$number. ${item.name}",
++                        fontSize = 15.sp,
++                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
++                        maxLines = 1
++                    )
++                }
++            }
++        }
+     }
+ }
+ 
+diff -ruN SpeedlineIPTV-v014-base/SpeedlineIPTV/app/src/main/java/al/speedline/iptv/ui/Theme.kt SpeedlineIPTV-v015-work/SpeedlineIPTV/app/src/main/java/al/speedline/iptv/ui/Theme.kt
+--- SpeedlineIPTV-v014-base/SpeedlineIPTV/app/src/main/java/al/speedline/iptv/ui/Theme.kt	2026-08-19 10:21:29.000000000 +0000
++++ SpeedlineIPTV-v015-work/SpeedlineIPTV/app/src/main/java/al/speedline/iptv/ui/Theme.kt	2026-08-19 12:16:13.261040996 +0000
+@@ -11,8 +11,8 @@
+         colorScheme = darkColorScheme(
+             primary = Color(0xFF2EA44F),
+             secondary = Color(0xFF2389DA),
+-            background = Color(0xFF0B1220),
+-            surface = Color(0xFF111827),
++            background = Color(0xFF5AA9E6),
++            surface = Color(0xFF77BCEC),
+             onPrimary = Color.White,
+             onBackground = Color.White,
+             onSurface = Color.White
+diff -ruN SpeedlineIPTV-v014-base/SpeedlineIPTV/app/src/main/res/values/styles.xml SpeedlineIPTV-v015-work/SpeedlineIPTV/app/src/main/res/values/styles.xml
+--- SpeedlineIPTV-v014-base/SpeedlineIPTV/app/src/main/res/values/styles.xml	2026-08-19 10:21:29.000000000 +0000
++++ SpeedlineIPTV-v015-work/SpeedlineIPTV/app/src/main/res/values/styles.xml	2026-08-19 12:16:13.261132793 +0000
+@@ -4,7 +4,8 @@
+         <item name="android:windowFullscreen">true</item>
+         <item name="android:windowActionModeOverlay">true</item>
+         <item name="android:colorAccent">#2EA44F</item>
+-        <item name="android:navigationBarColor">#0B1220</item>
++        <item name="android:navigationBarColor">#5AA9E6</item>
++        <item name="android:windowBackground">#805AA9E6</item>
+         <item name="android:windowLightNavigationBar">false</item>
+     </style>
+ </resources>

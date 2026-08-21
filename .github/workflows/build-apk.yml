@@ -27,20 +27,92 @@ jobs:
         with:
           gradle-version: '9.5.0'
 
-      - name: Rebuild source archive
+      - name: Rebuild source and apply v0.2.1 fixes
         run: |
-          cat ci/source/part_*.b64 | base64 -d > SpeedlineIPTV-v0.1.2-buildready.zip
+          cat ci/source/part_*.b64 | tr -d '\r\n' | base64 -d > SpeedlineIPTV-v0.1.2-buildready.zip
           unzip -q SpeedlineIPTV-v0.1.2-buildready.zip -d build-src
+          sed -i '/org.jetbrains.kotlin.android/d' build-src/SpeedlineIPTV/build.gradle.kts
+          cat ci/v015/part_*.b64 | tr -d '\r\n' | base64 -d > v015-overrides.zip
+          unzip -oq v015-overrides.zip -d build-src/SpeedlineIPTV
+          cat ci/v016/part_*.b64 | tr -d '\r\n' | base64 -d > v016-overrides.zip
+          unzip -oq v016-overrides.zip -d build-src/SpeedlineIPTV
+          cat ci/v017/part_*.b64 | tr -d '\r\n' | base64 -d > v017-overrides.zip
+          unzip -oq v017-overrides.zip -d build-src/SpeedlineIPTV
+          cp ci/v017fix/AdminScreens.kt build-src/SpeedlineIPTV/app/src/main/java/al/speedline/iptv/ui/AdminScreens.kt
+          cp ci/v017fix/BrowseScreen.kt build-src/SpeedlineIPTV/app/src/main/java/al/speedline/iptv/ui/BrowseScreen.kt
+          cat ci/v019/part_*.b64 | tr -d '\r\n' | base64 -d > v019-overrides.zip
+          unzip -oq v019-overrides.zip -d build-src/SpeedlineIPTV
+          sed -i '/org.jetbrains.kotlin.android/d' build-src/SpeedlineIPTV/app/build.gradle.kts
 
-      - name: Build debug APK
+          python3 - <<'PY'
+          from pathlib import Path
+          root = Path('build-src/SpeedlineIPTV/app/src/main/java/al/speedline/iptv')
+
+          p = root / 'data/Models.kt'
+          s = p.read_text()
+          s = s.replace('    val plot: String = "",\n    val channelNumber: Int? = null\n)', '    val plot: String = "",\n    val directSource: String = "",\n    val channelNumber: Int? = null\n)')
+          s = s.replace('                    plot = o.optJSONObject("info")?.optString("plot", "") ?: ""\n', '                    plot = o.optJSONObject("info")?.optString("plot", "") ?: "",\n                    directSource = o.optString("direct_source", "")\n')
+          s = s.replace('                        plot = o.optString("plot", ""),\n                        channelNumber', '                        plot = o.optString("plot", ""),\n                        directSource = o.optString("direct_source", ""),\n                        channelNumber')
+          p.write_text(s)
+
+          p = root / 'data/XtreamRepository.kt'
+          s = p.read_text()
+          start = s.index('    fun playbackUrl(item: StreamItem): String {')
+          end = s.index('\n    fun logout()', start)
+          replacement = '''    fun playbackUrl(item: StreamItem): String = playbackUrls(item).first()\n\n    fun playbackUrls(item: StreamItem): List<String> {\n        val c = auth.get() ?: error("No credentials")\n        val base = AppConfig.SERVER_BASE_URL.trimEnd('/')\n        if (item.type == ContentType.LIVE) {\n            return listOf("$base/live/${c.username}/${c.password}/${item.id}.ts")\n        }\n        val folder = if (item.type == ContentType.MOVIE) "movie" else "series"\n        val declared = item.containerExtension.trim().trimStart('.').lowercase()\n        val extensions = buildList {\n            if (declared.isNotBlank()) add(declared)\n            addAll(listOf("mp4", "mkv", "avi", "ts", "m3u8"))\n        }.distinct()\n        return buildList {\n            val direct = item.directSource.trim()\n            if (direct.startsWith("http://", true) || direct.startsWith("https://", true)) add(direct)\n            extensions.forEach { ext -> add("$base/$folder/${c.username}/${c.password}/${item.id}.$ext") }\n        }.distinct()\n    }\n'''
+          p.write_text(s[:start] + replacement + s[end:])
+
+          p = root / 'ui/AdminScreens.kt'
+          s = p.read_text()
+          s = s.replace('import androidx.compose.ui.text.LocalTextStyle\n', '')
+          if 'import androidx.compose.material3.LocalTextStyle' not in s:
+              s = s.replace('import androidx.compose.material3.OutlinedTextField', 'import androidx.compose.material3.LocalTextStyle\nimport androidx.compose.material3.OutlinedTextField')
+          first = '                singleLine = true,\n                modifier = Modifier.fillMaxWidth()\n            )'
+          s = s.replace(first, '                singleLine = true,\n                textStyle = LocalTextStyle.current.copy(color = Color.White),\n                modifier = Modifier.fillMaxWidth()\n            )', 1)
+          s = s.replace('                singleLine = true,\n                visualTransformation = if (showPassword)', '                singleLine = true,\n                textStyle = LocalTextStyle.current.copy(color = Color.White),\n                visualTransformation = if (showPassword)')
+          p.write_text(s)
+
+          p = root / 'ui/PlayerScreen.kt'
+          s = p.read_text()
+          s = s.replace('        val url = remember(current.id, current.type) { repository.playbackUrl(current) }\n        if (current.type == ContentType.MOVIE || current.type == ContentType.SERIES) {', '        val url = remember(current.id, current.type) { repository.playbackUrl(current) }\n        val vodUrls = remember(current.id, current.type, current.containerExtension, current.directSource) { repository.playbackUrls(current) }\n        if (current.type == ContentType.MOVIE || current.type == ContentType.SERIES) {')
+          s = s.replace('            VlcSurface(url = url, modifier = Modifier.fillMaxSize())', '            VlcSurface(urls = vodUrls, modifier = Modifier.fillMaxSize())')
+          old_start = s.index('@Composable\nprivate fun VlcSurface(')
+          old_end = s.index('\n@Composable\nprivate fun IjkSurface', old_start)
+          vlc = '''@Composable\nprivate fun VlcSurface(urls: List<String>, modifier: Modifier) {\n    val context = LocalContext.current\n    val safeUrls = remember(urls) { urls.filter { it.isNotBlank() }.distinct() }\n    var candidateIndex by remember(urls) { mutableIntStateOf(0) }\n    val activeUrl = safeUrls.getOrNull(candidateIndex) ?: return\n    val libVlc = remember { LibVLC(context, arrayListOf("--network-caching=1800", "--clock-jitter=0", "--clock-synchro=0")) }\n    val player = remember { VlcMediaPlayer(libVlc) }\n    var videoLayout by remember { mutableStateOf<VLCVideoLayout?>(null) }\n\n    fun handleVodKey(keyCode: Int, action: Int): Boolean {\n        if (action != android.view.KeyEvent.ACTION_DOWN) return false\n        return when (keyCode) {\n            android.view.KeyEvent.KEYCODE_DPAD_RIGHT, android.view.KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> {\n                val now = player.time\n                val length = player.length\n                val target = if (length > 0) kotlin.math.min(now + 10000L, length) else now + 10000L\n                runCatching { player.time = target }\n                true\n            }\n            android.view.KeyEvent.KEYCODE_DPAD_LEFT, android.view.KeyEvent.KEYCODE_MEDIA_REWIND -> {\n                runCatching { player.time = kotlin.math.max(0L, player.time - 10000L) }\n                true\n            }\n            android.view.KeyEvent.KEYCODE_DPAD_CENTER, android.view.KeyEvent.KEYCODE_ENTER, android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> {\n                runCatching { if (player.isPlaying) player.pause() else player.play() }\n                true\n            }\n            android.view.KeyEvent.KEYCODE_MEDIA_PLAY -> { runCatching { player.play() }; true }\n            android.view.KeyEvent.KEYCODE_MEDIA_PAUSE -> { runCatching { player.pause() }; true }\n            else -> false\n        }\n    }\n\n    DisposableEffect(player, libVlc, safeUrls) {\n        player.setEventListener { event ->\n            if (event.type == VlcMediaPlayer.Event.EncounteredError && candidateIndex < safeUrls.lastIndex) {\n                candidateIndex += 1\n            }\n        }\n        onDispose {\n            runCatching { player.setEventListener(null) }\n            runCatching { player.stop() }\n            runCatching { player.detachViews() }\n            runCatching { player.release() }\n            runCatching { libVlc.release() }\n        }\n    }\n\n    LaunchedEffect(activeUrl, videoLayout) {\n        val layout = videoLayout ?: return@LaunchedEffect\n        runCatching { player.stop() }\n        runCatching { player.detachViews() }\n        player.attachViews(layout, null, false, false)\n        val media = Media(libVlc, android.net.Uri.parse(activeUrl)).apply {\n            setHWDecoderEnabled(true, false)\n            addOption(":network-caching=1800")\n            addOption(":http-reconnect=true")\n            addOption(":http-user-agent=${AppConfig.APP_USER_AGENT}")\n        }\n        player.media = media\n        media.release()\n        player.play()\n    }\n\n    Box(modifier = modifier) {\n        AndroidView(\n            modifier = Modifier.fillMaxSize(),\n            factory = { ctx ->\n                VLCVideoLayout(ctx).also { view ->\n                    view.keepScreenOn = true\n                    view.isFocusable = true\n                    view.isFocusableInTouchMode = true\n                    view.setOnKeyListener { _, keyCode, event -> handleVodKey(keyCode, event.action) }\n                    videoLayout = view\n                    view.post { view.requestFocus() }\n                }\n            },\n            update = { view ->\n                view.keepScreenOn = true\n                view.setOnKeyListener { _, keyCode, event -> handleVodKey(keyCode, event.action) }\n                if (videoLayout !== view) videoLayout = view\n            }\n        )\n        androidx.tv.material3.Text(\n            text = "←  -10s      OK  PLAY / PAUSE      +10s  →",\n            color = androidx.compose.ui.graphics.Color.White,\n            fontSize = 14.sp,\n            modifier = Modifier\n                .align(Alignment.BottomCenter)\n                .padding(bottom = 22.dp)\n                .background(androidx.compose.ui.graphics.Color(0x88000000), androidx.compose.foundation.shape.RoundedCornerShape(10.dp))\n                .padding(horizontal = 18.dp, vertical = 8.dp)\n        )\n    }\n}\n'''
+          s = s[:old_start] + vlc + s[old_end:]
+
+          # Live TV only: stretch non-16:9 video to fill the whole TV screen.
+          if 'resizeMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FILL' not in s:
+              s = s.replace(
+                  'useController = false',
+                  'useController = false\n                resizeMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FILL',
+                  1
+              )
+          if 'RESIZE_MODE_FILL' not in s:
+              raise RuntimeError('Could not enable Live TV stretch mode in PlayerView')
+          p.write_text(s)
+
+          p = Path('build-src/SpeedlineIPTV/app/build.gradle.kts')
+          s = p.read_text().replace('versionCode = 9', 'versionCode = 11').replace('versionName = "0.1.9"', 'versionName = "0.2.1"')
+          if 'splits {' not in s:
+              s = s.replace('\n    buildFeatures {', '\n    splits {\n        abi {\n            isEnable = true\n            reset()\n            include("arm64-v8a", "armeabi-v7a")\n            isUniversalApk = false\n        }\n    }\n\n    buildFeatures {')
+          p.write_text(s)
+          PY
+
+          echo "v0.2.1 source rebuilt"
+
+      - name: Build debug APKs
         working-directory: build-src/SpeedlineIPTV
         run: gradle :app:assembleDebug --stacktrace
 
-      - name: Upload APK
+      - name: Show APK sizes
+        run: ls -lh build-src/SpeedlineIPTV/app/build/outputs/apk/debug/*.apk
+
+      - name: Upload APKs
         uses: actions/upload-artifact@v4
         with:
-          name: SpeedlineIPTV-debug-apk
-          path: build-src/SpeedlineIPTV/app/build/outputs/apk/debug/app-debug.apk
+          name: SpeedlineIPTV-v0.2.1-split-debug-apks
+          path: build-src/SpeedlineIPTV/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
 
   build-portal-v034:
