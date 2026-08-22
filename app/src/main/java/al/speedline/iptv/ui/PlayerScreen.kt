@@ -89,6 +89,16 @@ fun PlayerScreen(
         }
     }
 
+    DisposableEffect(current.id, current.type) {
+        val activeItem = current
+        onDispose {
+            // A Stalker create_link can stop being reusable as soon as its player
+            // session is closed. Never reopen a recently visited channel with the
+            // cached link; resolve a fresh link when the user returns to it.
+            repository.invalidatePlayback(activeItem)
+        }
+    }
+
     fun resetAutoPlayer() {
         if (requestedMode == PlayerMode.AUTO) {
             useIjk = false

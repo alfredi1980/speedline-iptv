@@ -1,0 +1,11 @@
+Speedline IPTV Portal v0.3.9
+
+- Fixes recently viewed live channels failing to reopen when the user switches
+  back before the 90-second resolved-link cache expires.
+- Invalidates a live channel's cached Stalker create_link as soon as playback
+  leaves that channel, so returning always resolves a fresh playable session.
+- Direct Chameleon/Astra HTTP URLs are not cached by this mechanism and remain
+  unchanged; the fix only rebuilds their player connection.
+- Retains the v0.3.8 five-second frozen-playback recovery, low-latency Media3
+  buffers, three-second first-frame check, TextureView output, channel-list UI,
+  and movie remote controls.
