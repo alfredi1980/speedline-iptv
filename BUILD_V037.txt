@@ -1,0 +1,8 @@
+Speedline IPTV Portal v0.3.7
+
+- Replaces Media3 PlayerView/SurfaceView output with a directly attached TextureView.
+- Prevents the live picture from remaining black until the channel list is opened and closed.
+- Tracks the first rendered video frame instead of treating audio-ready playback as successful video playback.
+- Switches to the fallback player when no video frame is rendered within three seconds in AUTO mode.
+- Retains the v0.3.6 channel-list layout, playback timing improvements, and movie remote controls.
+- Builds separate ARM32 and ARM64 APKs.

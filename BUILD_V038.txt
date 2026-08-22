@@ -1,0 +1,14 @@
+Speedline IPTV Portal v0.3.8
+
+- Detects a live channel whose playback position has stopped advancing for about
+  5 seconds after video has started.
+- Automatically rebuilds the player connection for the same channel; no manual
+  channel change is required. If the portal supplied a temporary create_link URL,
+  its cached value is invalidated before reconnecting. Direct Chameleon/Astra URLs
+  are left unchanged and are simply reopened.
+- Uses a smaller Media3 live-stream buffer (2-10 seconds), starts with 350 ms of
+  buffered media, and resumes after rebuffering with 750 ms to reduce channel-open
+  delay while retaining protection against short network jitter.
+- Limits video joining time to 500 ms and keeps decoder fallback enabled.
+- Retains the v0.3.7 TextureView black-screen fix, 3-second first-frame check,
+  channel-list overlay, and film seek/play controls.
